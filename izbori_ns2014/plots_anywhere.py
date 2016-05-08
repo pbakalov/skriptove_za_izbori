@@ -2,6 +2,8 @@
 
 ### Скрипт за изобразяване на изборни резултати от изборите за НС, 5 Октомври 2014 г. 
 import matplotlib.pyplot as plt
+import matplotlib
+matplotlib.rc('font', family='Arial')
 #plt.ion()
 from numpy import linspace, sin, zeros, arange
 
@@ -128,7 +130,7 @@ for i in range(len(parties)):
                 new_string+=" "+word
         parties[i] = new_string #rstrip("\r\n ")
     #print parties[i]
-    print parties[i], "\n"
+    print parties[i].encode('utf-8'), "\n"
     while parties[i][-1] not in cyrillic:
         parties[i] = parties[i][:-1]
 
@@ -164,9 +166,9 @@ for i,n in enumerate(section_numbers):
     file = open("votes_pe2014.txt", 'r')
     for line in file:
         if str(n) in line:
-            print line
-            print line.split(";")[0::2]
-            print line.split(";")[1::2]
+            #print line
+            #print line.split(";")[0::2]
+            #print line.split(";")[1::2]
             words = line.split(";")[1:]
             for j in range(len(parties)): #гласове за подбраните партии
                 party_results[i,j,0] = words[2*j]
@@ -183,8 +185,9 @@ for i,n in enumerate(section_numbers):
     section_res, section_parties = (list(x) for x in zip(*sorted(zip(party_results[i,:,0], parties[:]), reverse = True))) #в низходящ ред
     leading_section_res = zeros(show_first+1, int)
     leading_section_res[:show_first] = section_res[:show_first]
-    leading_section_res[-1] = sum(section_res[show_first:]) #действителни гласове за останалите партии
-    print section_names[i], sum(party_results[i,:,0]), sum(party_results[i,:,1])
+    leading_section_res[-1] = sum(section_res[show_first:]) #действителни гласове за останалите партии  
+    if sum(party_results[i,:,0])>500: #секции само с повече от 500 валидни гласа
+        print section_names[i], "валидни:", sum(party_results[i,:,0]), "невалидни:", sum(party_results[i,:,1])
 #    for k, party in enumerate(parties):
 #        print party, party_results[i,k,0]
 #    for party, res in  zip(section_parties, leading_section_res[:show_first]):
@@ -254,7 +257,9 @@ print "\n", total_votes_selection
 print total_votes, "\n"
 
 for i,total in enumerate(results[:,0]):
-    print parties[i], results[i,0], results[i,0]/total_votes_selection
+    #print parties[i].encode('utf-8'), results[i,0], results[i,0]/total_votes_selection
+    if results[i,0]>100:
+        print parties[i].encode('utf-8'), results[i,0], results[i,0]/total_votes_selection
 
 fig=plt.figure()
 patches, texts, autotexts = plt.pie(first_results, labels = parties[:show_first]+["Други".decode('utf-8')], autopct='%1.1f%%', colors = colors, labeldistance = 1.25) #, startangle = 30)
