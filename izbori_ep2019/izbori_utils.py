@@ -14,8 +14,34 @@ def load_sections_data(filename):
     sections = [line.split(';') for line in text]
     return sections
 
-sections = load_sections_data('sections.txt')
+def get_results(filename):
+    f = open(filename, 'r')
+    text = f.read().rstrip('\n').split('\n')
+    f.close()
 
-m, tot =  count_machine_sections(sections)
-print m
-print tot
+    results = []
+    for i in range(27):
+        results.append([i+1,0,0])
+
+    for line in text:
+        line = [int(x) for x in line.split(';')[2:]]
+        for i in range(27):
+            results[i][1] += line[i*3+1]
+            results[i][2] += line[i*3+2]
+        
+    return results
+    
+
+paper_results = get_results('votes.txt')
+machine_results = get_results('votes_mv.txt')
+
+print "votes.txt:"
+paper_results = sorted(paper_results, key = lambda x: x[1], reverse=True)
+for result in paper_results:
+    print "{:<3d}{:>10d}{:>10d}".format(result[0],result[1], result[2])
+
+print "votes_mv.txt:"
+machine_results = sorted(machine_results, key = lambda x: x[1], reverse=True)
+for result in machine_results:
+    print "{:<3d}{:>10d}{:>10d}".format(result[0],result[1], result[2])
+
