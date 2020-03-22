@@ -3,6 +3,7 @@ import matplotlib.pylab as plt
 import seaborn as sb
 from numpy import arange
 import plotly.graph_objects as go
+import pandas as pd
 
 #plt.ion()
 
@@ -67,6 +68,7 @@ def get_filtered_results_by_station(filename, station_ids):
                 extreme_votes += line[1]
                 extreme_diff += line[1] - line[4]
                 extreme_stations +=1
+                print extreme_stations, station_id, line[1], line[4]
 
     print fnm[-1]
     fnm = sorted( fnm, key = lambda x: x[0])
@@ -119,16 +121,22 @@ plt.savefig("section_results.svg")
 plt.savefig("section_results.png", dpi=1200)
 plt.close()
 
-import plotly.graph_objects as go
-M=len(x_pos)
-animals= x_pos[:M]#['giraffes', 'orangutans', 'monkeys']
+#import plotly.graph_objects as go
+#M=len(x_pos)
+#animals= x_pos[:M]#['giraffes', 'orangutans', 'monkeys']
+#
+#fig = go.Figure(data=[
+#    go.Bar(name='Фандъкова'.decode('utf-8'), x=animals, width=width[:M], y=fanduk[:M]),
+#    go.Bar(name='Манолова'.decode('utf-8'), x=animals,  width=width[:M], y=maya[:M])
+#])
+## Change the bar mode
+#fig.update_layout(barmode='stack')
+#fig.write_html('section_results_bar_plot.html', auto_open=True)
 
-fig = go.Figure(data=[
-    go.Bar(name='Фандъкова'.decode('utf-8'), x=animals, width=width, y=fanduk[:M]),
-    go.Bar(name='Манолова'.decode('utf-8'), x=animals,  width=width, y=maya[:M])
-])
-# Change the bar mode
-fig.update_layout(barmode='stack')
-fig.write_html('section_results_bar_plot.html', auto_open=True)
+print "reading addresses"
+adresi = pd.read_excel('/Users/fun/Documents/skriptove_za_izobri/izbori_mestni2019/Sekcii-08.09.2019-KM-0.xlsx')
+print "addresses read" 
 
-#raw_input()
+print adresi.head()
+
+raw_input()
