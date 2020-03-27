@@ -133,12 +133,70 @@ def interactive_plot():
     station_ids =  load_station_ids('sections_03.11.2019.txt', 2246) # 2246 = Столична община (22 = код на район, 46 = код на община)
     results_by_station, maya, fanduk, x_pos, width, extreme_ids = get_filtered_results_by_station("votes_03.11.2019.txt", station_ids)
     M=len(x_pos)
+
+    station_data = get_station_df(results_by_station)
     
+    #fig = go.Figure(data=[
+    #    go.Bar(name='Фандъкова'.decode('utf-8'), x=x_pos[:M], width=width[:M], y=fanduk[:M]),
+    #    go.Bar(name='Манолова'.decode('utf-8'), x=x_pos[:M],  width=width[:M], y=maya[:M])
+    #])
+
     fig = go.Figure(data=[
-        go.Bar(name='Фандъкова'.decode('utf-8'), x=x_pos[:M], width=width[:M], y=fanduk[:M]),
-        go.Bar(name='Манолова'.decode('utf-8'), x=x_pos[:M],  width=width[:M], y=maya[:M])
+    go.Bar(name='Фандъкова'.decode('utf-8'), x=x_pos[:M], width=width[:M], y=fanduk[:M],
+           hovertext=  'Secion ID: ' + station_data['Секция'.decode('utf-8')] + \
+           '<br />Address: ' + station_data['Адрес'.decode('utf-8')] + \
+           '<br />Fandukova: ' + station_data['Фандъкова'.decode('utf-8')] + \
+           '<br />Manolova: ' + station_data['Манолова'.decode('utf-8')] ),
+    go.Bar(name='Манолова'.decode('utf-8'), x=x_pos[:M],  width=width[:M], y=maya[:M], 
+           hovertext=  'Secion ID: ' + station_data['Секция'.decode('utf-8')] + \
+           '<br />Address: ' + station_data['Адрес'.decode('utf-8')] + \
+           '<br />Fandukova: ' + station_data['Фандъкова'.decode('utf-8')] + \
+           '<br />Manolova: ' + station_data['Манолова'.decode('utf-8')] )
     ])
+
     # Change the bar mode
     fig.update_layout(barmode='stack')
     fig.write_html('section_results_bar_plot.html', auto_open=True)
     
+
+def get_station_df(results_by_station):
+    from numpy import array
+
+    sorted_results = sorted(results_by_station, key = lambda x: x[1][1]*1./(x[1][1]+x[1][4]))
+
+    adresi = pd.read_excel('./Sekcii-08.09.2019-KM-0.xlsx')
+
+    station_addresses =[]
+    c = 0 
+    for i, r in enumerate(sorted_results[:]):
+        station_id = r[0]
+        #region = station_id[:2] 22 sofia
+        #municipality = station_id[2:4] 46 sofia municipality
+        adm_reg = station_id[4:6]
+        station = station_id[6:]    
+
+        try:
+            station_addresses.append([station_id, 
+                                      adresi[(adresi['Област код'.decode('utf-8')] == 22) \
+                                    & (adresi['Община код'.decode('utf-8')]==46)\
+                                    & (adresi['Район код'.decode('utf-8')]== int(adm_reg)) \
+                                    & (adresi['Секция'.decode('utf-8')]  == int(station))]['Адрес'.decode('utf-8')].values[0],
+                                    r[1][1], #брой валидни за фандъкова
+                                    r[1][4]]) #брой валидни за манолова
+        except IndexError:
+            station_addresses.append([station_id,
+                                     "Unknown",
+                                     r[1][1],
+                                     r[1][4]])
+            c+=1
+
+
+    print "no address data for %s polling stations"%c
+
+    station_data = pd.DataFrame(array( station_addresses), columns = ['Секция'.decode('utf-8'), 
+                                                                      'Адрес'.decode('utf-8'),
+                                                                      'Фандъкова'.decode('utf-8'),
+                                                                      'Манолова'.decode('utf-8'),
+                                                                     ])
+
+    return station_data
