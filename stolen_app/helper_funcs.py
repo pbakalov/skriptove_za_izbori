@@ -8,6 +8,10 @@ def load_votes_data(month):
     '''
     Loads votes data for either april or july.
     
+    Parameters
+    ----------
+    month : {'april', 'july', 'oct22'}
+    
     Returns
     -------
     votes : dataframe
@@ -40,6 +44,10 @@ def load_votes_data(month):
 def load_station_locations(month):
     '''
     Loads polling station location data for either april or july.
+    
+    Parameters
+    ----------
+    month : {'april', 'july', 'oct22'}
     
     Returns
     -------
@@ -122,7 +130,7 @@ def load_full(month):
     
     Parameters
     ----------
-    month : {july, april}
+    month : {'april', 'july', 'oct22'}
     
     Returns
     -------
@@ -224,7 +232,7 @@ def all_parties_drops( april_results, july_results):
     
     order = april_results[list(parties_both)].sum().sort_values(ascending = False).index
     
-    data = pd.DataFrame(index = ids)
+    data = pd.DataFrame(index = [id for id in ids])
     data['населено място'] = july_results['place']
     for party in order:
         data[f'{party} април'] = april_results[party]
@@ -232,61 +240,158 @@ def all_parties_drops( april_results, july_results):
         data[f'спад {party}'] = (data[f'{party} април'] - data[f'{party} юли'])/data[f'{party} април']
     return data 
 
-def all_parties_drops_by_ekatte( april_results, july_results, drop_abroad = True, include_pct = True):
+def compare_by_sid(
+    results1, 
+    results2, 
+    label1 = 'април', 
+    label2 = 'юли',
+    drop_abroad = False
+):
     '''
-    Returns the results of party per ID + some additional columns:
-    - спад, населено място 
+    Returns a dataframe with the number of votes for each party per Station ID
+    in both elections + some additional columns:
+    * drop per party (as proportion of result1)
+    * location (sourced from result2)
+    * station address (sourced from Oct 2022)
+    
+    Only parties that are in both results1 and results2 are returned.
+    
+    Parameters
+    ----------
+    results1 : df
+        Number of votes per party indexed by station ID
+        The initial columns contain party results.
+        The last seven columns are assumed to be:
+        ['region', 'municipality', 'admin_reg', 'sid', 'region_name', 'place',
+       'ekatte']
+    results2 : df 
+        Number of votes per party indexed by station ID
+        The initial columns contain party results.
+        The last seven columns are assumed to be:
+        ['region', 'municipality', 'admin_reg', 'sid', 'region_name', 'place',
+       'ekatte']
+    label1 : str, default април
+        A label that will be attached to party results from results1
+    label2 : str, default юли
+        A label that will be attached to party results from results2
+    drop_abroad : bool, default True
+        If ``True`` will drop station IDs outside of the country (starting with '32')
+        
+    Returns
+    -------
+    party_votes : df 
+        A dataframe indexed by Station ID.
+        Columns: location, ekatte, region, address, party 1 votes 1, party 1 votes 2, party 1 drop pct, etc.
+    '''
+
+    parties_both = set(results1.columns[:-7]) & set(results2.columns) 
+    ids = set(results1.index) | set(results2.index)
+    
+    if drop_abroad:
+        ids = [x for x in ids if x[:2]!='32']
+    
+    addr = station_addresses()
+   
+    # order descending by totals in results1
+    order = results1[list(parties_both)].sum().sort_values(ascending = False).index
+    
+    data = pd.DataFrame(index = [id for id in ids])
+    data['населено място'] = results2['place']
+    data['екатте'] = results2['ekatte']
+    data['регион'] = results2['region_name']
+    data['адрес'] = addr['address']
+    
+    for party in order:
+        data[f'{party} {label1}'] = results1[party]
+        data[f'{party} {label2}'] = results2[party]
+        data[f'спад {party}'] = (data[f'{party} {label1}'] - data[f'{party} {label2}'])/data[f'{party} {label1}']
+    return data 
+
+def compare_by_ekatte(
+    results1,
+    results2, 
+    label1='април',
+    label2='юли',
+    drop_abroad = True, 
+    include_pct = False,
+    include_totals = False,
+):
+    '''
+    Returns a dataframe with the number of votes for each party per EKATTE code 
+    in both elections + some additional columns:
+    * drop per party (as proportion of result1)
+    * location (sourced from result2)
+    * 
     
     Only returns parties that participated in both elections.
     
     Parameters
     ----------
-    april_results : df
-        Number of votes per party indexed by station ID or EKATTE.
-    july_results : df 
-        Number of votes per party indexed by station ID or EKATTE.
+    results1 : df
+        Number of votes per party indexed by station ID.
+        The initial columns contain party results.
+        The last seven columns are assumed to be:
+        ['region', 'municipality', 'admin_reg', 'sid', 'region_name', 'place',
+       'ekatte']
+    results2 : df 
+        Number of votes per party indexed by station ID.
+        The initial columns contain party results.
+        The last seven columns are assumed to be:
+        ['region', 'municipality', 'admin_reg', 'sid', 'region_name', 'place',
+       'ekatte']
+    label1 : str, default април
+        A label that will be attached to party results from results1
+    label2 : str, default юли
+        A label that will be attached to party results from results2
     drop_abroad : bool, default True
-        If ``True`` will drop EKATTE codes outside of the country.
-    include_pct : bool, default True
+        If ``True`` will drop EKATTE codes outside of the country (6-digit EKATTE codes starting with '100').
+    include_pct : bool, default False
         If ``True``, will include party pct. support.
+    include_totals : bool, default False
+        If ``True``, will include total votes in each election and total activity drop.
         
     Returns
     -------
     party_votes : df 
-        columns: Votes 1, Votes 2, Drop pct, location.
-        Only includes parties that participated in both elections.
+        A dataframe indexed by EKATTE code.
+        Columns: region, location, party 1 votes 1, party 1 votes 2, party 1 drop pct, etc.
     '''
 
-    parties_both = set(april_results.columns[:-7]) & set(july_results.columns) 
-    regions = april_results.groupby('ekatte').first()[['region_name','place']]
-    april_results = april_results.groupby('ekatte').sum()
-    july_results = july_results.groupby('ekatte').sum()
-    ids = set(april_results.index) | set(july_results.index)
+    parties_both = set(results1.columns[:-7]) & set(results2.columns) 
+    regions = results1.groupby('ekatte').first()[['region_name','place']]
+    results1 = results1.groupby('ekatte').sum(numeric_only = True)
+    results2 = results2.groupby('ekatte').sum(numeric_only = True)
+    ids = set(results1.index) | set(results2.index)
+    
     if include_pct:
-        apr_pct = april_results.divide(april_results.sum(axis = 1), axis = 0)
-        jul_pct = july_results.divide(july_results.sum(axis = 1), axis = 0)
+        pct1 = results1.divide(results1.sum(axis = 1), axis = 0)
+        pct2 = results2.divide(results2.sum(axis = 1), axis = 0)
     
     
-    order = april_results[list(parties_both)].sum().sort_values(ascending = False).index
-    
+    order = results1[list(parties_both)].sum().sort_values(ascending = False).index
     
     data = pd.DataFrame(index = [x for x in ids])
     data.index.name = 'ЕКАТТЕ'
-    data['мир'] = regions['region_name']
+    data['регион'] = regions['region_name']
     data['населено место'] = regions['place']
+    
     for party in order:
-        data[f'{party} април'] = april_results[party]
-        data[f'{party} юли'] = july_results[party]
-        data[f'спад {party}'] = (data[f'{party} април'] - data[f'{party} юли'])/data[f'{party} април']
+        data[f'{party} {label1}'] = results1[party]
+        data[f'{party} {label2}'] = results2[party]
+        data[f'спад {party}'] = (data[f'{party} {label1}'] - data[f'{party} {label2}'])/data[f'{party} {label1}']
         if include_pct:
-            data[f'{party} април %'] = apr_pct[party]
-            data[f'{party} юли %'] = jul_pct[party]
+            data[f'{party} {label1} %'] = pct1[party]
+            data[f'{party} {label2} %'] = pct2[party]
+    
+    if include_totals:
+        data[f'общо {label1}'] = results1.sum(axis = 1)
+        data[f'общо {label2}'] = results2.sum(axis = 1)
+        data['общо спад'] = (data[f'общо {label1}'] - data[f'общо {label2}'])/data[f'общо {label1}']
         
     if drop_abroad:
-        july_bg_ekatte= [x for x in july_results.index if not (str(x)[:3] =='100' and len(str(x)) == 6)]
-        april_bg_ekatte = [x for x in april_results.index if not (str(x)[:3] =='100' and len(str(x)) == 6)]
-        both_bg_ekatte = set(april_bg_ekatte) & set(july_bg_ekatte)
-        both_bg = list(both_bg_ekatte)
+        bg_ekatte1 = [x for x in results1.index if not (str(x)[:3] =='100' and len(str(x)) == 6)]
+        bg_ekatte2 = [x for x in results2.index if not (str(x)[:3] =='100' and len(str(x)) == 6)]
+        both_bg = list(set(bg_ekatte2) & set(bg_ekatte1))
         return data[data.index.isin(both_bg)]
     
     return data 
@@ -442,7 +547,8 @@ def single_ekatte_plot(
         'ДПС', 
         'ИТН', 
         'МУТРИ ВЪН!'
-    ]
+    ],
+    return_fig = False
 ):
     '''
     
@@ -454,12 +560,16 @@ def single_ekatte_plot(
         Number of votes by party and station, indexed by Station ID.
     ekatte : int
         EKATTE code
+    parties_filter : list of str
+        Parties to show.
+    return_fig : bool, default False
+        If true, will return the figure object.
     '''
 
     fig = go.Figure()
     
-    aa = april.groupby('ekatte').sum()
-    jj = july.groupby('ekatte').sum()
+    aa = april.groupby('ekatte').sum(numeric_only = True)
+    jj = july.groupby('ekatte').sum(numeric_only = True)
 
     s = aa.loc[ekatte][parties_filter].copy().sort_values(ascending=False)
     ss = jj.loc[ekatte][parties_filter].copy()
@@ -502,7 +612,7 @@ def single_ekatte_plot(
         height = 650,
 #         width = 1200
     )
-    fig.show()
+    #fig.show()
 
     reg_sids = single_ekatte_results(april, july, ekatte, parties_mvp=s.index)
     
@@ -514,8 +624,12 @@ def single_ekatte_plot(
         styler.background_gradient(axis=1, vmin = -100, vmax = 100, subset = [x for x in reg_sids if 'спад' in x], cmap="RdYlGn_r")
         styler.format(na_rep = '-', precision = 0)
         return styler
-    
-    return reg_sids.style.pipe(make_pretty)
+   
+    if return_fig:
+        return reg_sids.style.pipe(make_pretty), fig
+    else:
+        fig.show()
+        return reg_sids.style.pipe(make_pretty)
 
 def sid_to_ekatte(results, station_id):
     '''
@@ -546,7 +660,8 @@ def ekatte_map(
         'april' : 'април',
         'july' : 'юли'
     },
-    range_color = (15, 80)
+    range_color = (15, 80),
+    title = None
 ):
     '''
     Produces an EKATTE map of data[col].
@@ -610,6 +725,7 @@ def ekatte_map(
         margin={"r":0,"t":0,"l":0,"b":0},
         width = 1400,
         height = 1200,
+        title = title,
     )
 
     fig.show()
@@ -668,13 +784,7 @@ def large_drop_loss(
             ) 
         )
         
-import plotly.graph_objects as go 
-import numpy as np 
-import pandas as pd 
-
-from helper_funcs import single_ekatte_results
-
-def sid_filter_plot(
+def sid_selection_plot(
     april, 
     july, 
     sids,
@@ -726,7 +836,7 @@ def sid_filter_plot(
     fig.update_layout(
         barmode = 'group',
         title= (
-            '{} .Брой секции: {}, \nСпад на активността: {:<5.2f} % '.format(
+            '{}. Брой секции: {}, \nСпад на активността: {:<5.2f} % '.format(
                 title,
                 len(sids),
                 (aa.sum() - jj.sum())/aa.sum()*100,
@@ -759,6 +869,7 @@ def sid_filter_plot(
     )
     
     reg_sids.replace([np.inf, -np.inf], np.nan, inplace = True)
+    reg_sids.index.name = 'секция'
 
     
     def make_pretty(styler):
@@ -838,3 +949,25 @@ def sid_selection_results(
 
     return reg_sids[order].sort_index()
     
+def station_addresses():
+    '''
+    Polling station addresses from October 2022 (first time they appeared).
+    '''
+    addr = pd.read_csv(
+        './sections_02.10.2022_corr.txt', 
+        sep = ';', 
+        header=None,
+        names = [
+            'sid', 
+            'region',
+            'region_name',
+            'ekatte',
+            'place',
+            'address',
+            'mobile',
+            'ship',
+            'number of machines',
+        ],
+        dtype = {'sid': str}
+    ).set_index('sid')
+    return addr
