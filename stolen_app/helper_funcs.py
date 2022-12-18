@@ -4,6 +4,8 @@ import plotly.express as px
 import geojson
 import numpy as np 
 
+from IPython.display import display 
+
 def load_votes_data(month):
     '''
     Loads votes data for either april or july.
@@ -64,7 +66,7 @@ def load_station_locations(month):
     elif month=='july': 
         source_file = 'sections_11.07.2021.txt'
     elif month=='oct22':
-        source_file = 'sections_02.10.2022.txt'
+        source_file = 'sections_02.10.2022_corr.txt' #fixed address of one station in USA
         names = ['station no', 'MIR', 'MIR name','EKATTE', 'place', 'address', 'mobile', 'ship', 'machine']
         usecols = [0, 1, 2, 3, 4, 5]
     else:
@@ -245,7 +247,8 @@ def compare_by_sid(
     results2, 
     label1 = 'април', 
     label2 = 'юли',
-    drop_abroad = False
+    include_drops = True,
+    drop_abroad = False,
 ):
     '''
     Returns a dataframe with the number of votes for each party per Station ID
@@ -274,7 +277,9 @@ def compare_by_sid(
         A label that will be attached to party results from results1
     label2 : str, default юли
         A label that will be attached to party results from results2
-    drop_abroad : bool, default True
+    include_drops : bool, default True
+        If ``True`` will include the relative drop of support for each party 
+    drop_abroad : bool, default False
         If ``True`` will drop station IDs outside of the country (starting with '32')
         
     Returns
@@ -304,7 +309,8 @@ def compare_by_sid(
     for party in order:
         data[f'{party} {label1}'] = results1[party]
         data[f'{party} {label2}'] = results2[party]
-        data[f'спад {party}'] = (data[f'{party} {label1}'] - data[f'{party} {label2}'])/data[f'{party} {label1}']
+        if include_drops:
+            data[f'спад {party}'] = (data[f'{party} {label1}'] - data[f'{party} {label2}'])/data[f'{party} {label1}']
     return data 
 
 def compare_by_ekatte(
@@ -757,13 +763,33 @@ def large_drop_loss(
         'МУТРИ ВЪН!'
     ]
 ):
-    print (
-        f'Резултати по партии в населени места със спад над {min_drop*100}% в подкрепата за съответната партия\n' +
+    '''
+    Calculates the number of votes lost by a given party in all EKATTE with a drop exceeding ``min_drop`` 
+    for said party. 
+    
+    Parameters
+    ----------
+    drops_by_ekatte : df 
+        Indexed by EKATTE. Contains results by party and the drops per party.
+        
+    Returns
+    -------
+    large_drop_loss : df 
+    '''
+    
+    caption = f'Резултати по партии в населени места със спад над {min_drop*100}% в подкрепата за съответната партия\n' + \
         f'през юли спрямо април 2021 и поне {min_votes} гласа за съответната партия през април 2021\n'
-    )
+
+    print (caption)
     
     print (
         '{: <15} {: >15} {: >10} {: >10} {: >20}'.format('партия', 'гласове април', 'юли', 'разлика', 'брой населени места')
+    )
+    
+    ldl = pd.DataFrame(
+        index = [
+            'гласове април', 'гласове юли', 'разлика', 'спад %', 'брой населени места'
+        ]
     )
 
     for party in parties:
@@ -783,6 +809,39 @@ def large_drop_loss(
                 len(settlements)
             ) 
         )
+        
+        
+
+        
+        ldl[party] = [
+#             party, 
+            int(lost_votes[[f'{party} април', f'{party} юли'][0]]), 
+            int(lost_votes[[f'{party} април', f'{party} юли'][1]]), 
+            int(lost_votes[f'{party} април'] - lost_votes[f'{party} юли']),
+            (lost_votes[f'{party} април'] - lost_votes[f'{party} юли'])/lost_votes[f'{party} април']*100,
+            int(len(settlements))
+        ]
+
+    styles = [
+        dict(
+            selector="caption",
+            props=[
+                ("font-size", "150%"),
+            ]
+        )
+    ]
+    
+    def make_pretty(styler):
+        styler.set_caption(caption)
+        styler.background_gradient(axis=1, vmin = 0, vmax = 53000, subset = [x for x in styler.data if 'разлика' in x], cmap="RdYlGn_r")
+        styler.background_gradient(axis=1, vmin = 0, vmax = 449, subset = [x for x in styler.data if 'брой' in x], cmap="RdYlGn_r")
+        styler.format(na_rep = '-', precision = 0)
+        styler.format(na_rep = '-', precision = 2, subset = ['спад %'])
+#         styler.bar(subset = ['разлика', 'брой населени места'])
+        styler.set_table_styles(styles)
+        return styler
+        
+    return ldl.transpose().sort_values('разлика', ascending = False).style.pipe(make_pretty)
         
 def sid_selection_plot(
     april, 
@@ -876,6 +935,8 @@ def sid_selection_plot(
         styler.background_gradient(axis=1, vmin = -100, vmax = 100, subset = [x for x in reg_sids if 'спад' in x], cmap="RdYlGn_r")
         styler.format(na_rep = '-', precision = 0)
         return styler
+    
+    display(reg_sids.style.pipe(make_pretty))
     
     return reg_sids.style.pipe(make_pretty)
 
@@ -971,3 +1032,485 @@ def station_addresses():
         dtype = {'sid': str}
     ).set_index('sid')
     return addr
+
+def get_protocols(month, by_sid = True, extra = True):
+    '''
+    Parameters
+    ----------
+    month : {oct22}
+        The month for which to load data.
+        For now only October 22.
+    by_sid : bool, default True
+        If ``True`` will sum the data by SID.
+    extra : bool, defaul True
+        If ``True`` and ``by_sid`` is also ``True``, will return some extra data (address, station location)
+        
+    Returns
+    -------
+    protocols: df
+        Protocols data.
+        Rows correspond to individual protocols/station IDs.
+    '''
+    
+    if month == 'oct22':
+        protocols = pd.read_csv(
+            '../2022-10ns/np/protocols_02.10.2022.txt', 
+            sep = ';', 
+            usecols = range(19),
+            names = [
+                'form number', 
+                'sid', 
+                'rik', 
+                'page numbers', 
+                'machine number', 
+                'reason flag', 
+                'number of ballots', 
+                'eligible voters', 
+                'added voters', 
+                'signatures', 
+
+                'unused ballots', 
+                'destroyed ballots', 
+                'total cast', # values in this column seem to be totally off, should be the sum of the next two lines; actually the column order seems to be messed up   
+                'paper ballots', 
+                'machine votes',
+                'invalid paper ballots', 
+                'valid votes total', # according to readme: 'valid paper ballots',
+                'valid votes for parties', 
+                'valid votes blank'
+            ],
+            dtype = {'sid': str}
+        )
+    
+    if by_sid:
+        protocols = protocols.groupby('sid').sum(numeric_only = True).drop(columns = ['form number', 'rik', 'reason flag'])
+
+        if extra:
+            addr = station_addresses()
+            protocols['address'] = addr['address']
+            month_data = load_full(month)
+            protocols['place'] = month_data['place']
+            protocols['ekatte'] = month_data['ekatte']
+
+    return protocols
+
+def ekatte_selection_totals(results_by_sid, ekatte_codes, parties_filter):
+    '''
+    Calculates party totals in regions specified.
+    
+    Parameters
+    ----------
+    results_by_sid : df
+        DataFrame indexed by station ID.
+    ekatte_codes : list
+        A list of EKATTE codes.
+    parties_filter : list
+        List of party labels. Should be in results_by_sid.
+        
+    Returns
+    -------
+    s : series
+        Totals for the parties in parties_filter and a separate total for all other parties.
+        Sorted descending by the number of votes of parties in ``parties_filter``.
+    '''
+    selection = results_by_sid.groupby('ekatte').sum(numeric_only=True).loc[ekatte_codes].sum()
+    s = selection[parties_filter].sort_values(ascending = False)
+    other = selection[[x for x in selection.index if x not in parties_filter]]
+    s['други'] = other.sum()
+    return s
+    
+def comparison_barplot(series_list, labels = None, title=None):
+    '''
+    Produces a comparison bar plot of series in series_list.
+    
+    Parameters
+    ----------
+    series_list : list of pd.series
+    
+    '''
+
+    fig = go.Figure()
+    
+    if labels is None:
+        labels = range(1, len(series_list)+1)
+                    
+    for i,s in enumerate(series_list):
+
+        fig.add_trace(
+            go.Bar(x = s.index, y = s, name = labels[i], text=s.values)
+        )
+
+
+    fig.update_layout(
+        barmode = 'group',
+        title= (f'{title}'),
+        font=dict(
+            size=27,
+        ),
+        plot_bgcolor='rgba(0,0,0,0)',
+        legend=dict(
+            x=0.8,
+            y=.8,
+        ),
+    )
+
+
+    fig.update_layout(
+        yaxis_title = 'Брой гласове',
+        xaxis_title = 'Партия/коалиция',
+        height = 650,
+#         width = 1200
+    )
+    fig.show()
+    
+
+def ekatte_selection_plot(
+    results1,
+    results2,
+    ekatte_codes,
+    label1 = 'Април 2021',
+    label2 = 'Юли 2021',
+    parties_filter = [
+        'БСП', 
+        'ГЕРБ-СДС', 
+        'ДБ', 
+        'ДПС', 
+        'ИТН', 
+        'МУТРИ ВЪН!',
+    ],
+    title = ''
+):
+    '''
+    Produces a barplot of the aggregated results for the selected parties in the specified regions.
+    
+    TO DO: produce a summary table by EKATTE in addition to the plot.
+    
+    Parameters
+    ----------
+    results1 : df
+        Results per party indexed by station ID.
+    results2 : df
+        Results per party indexed by station ID.
+    ekatte_codes : list 
+        List of valid EKATTE codes.
+    label1 : str, default 'Април 2021'
+        Optional label to appear in plots.
+    label2 : str, default 'Юли 2021'
+        Optional label to appear in plots.
+        
+    '''
+    
+    s1 = ekatte_selection_totals(results1, ekatte_codes, parties_filter)
+    s2 = ekatte_selection_totals(results2, ekatte_codes, parties_filter)
+        
+#     добави:
+#     * брой секции
+#     * таблица по екатте
+#     * таблица по секции за всяко екатте
+#     * заглавие с брой населени места, брой секции, спад на активността 
+
+    act_drop = (s1.sum() - s2.sum())/s1.sum()*100
+    
+    title = f'{title}. Брой населени места: {len(ekatte_codes)}. Спад на активността: {act_drop:.2f}%'
+    
+        
+    comparison_barplot([s1,s2], labels=[label1, label2], title=title)
+
+def ekatte_selection_comparison_table(
+    results1,
+    results2,
+    ekatte_codes,
+    label1 = 'април',
+    label2 = 'юли',
+    parties_mvp = [
+        'БСП', 
+        'ГЕРБ-СДС', 
+        'ДБ', 
+        'ДПС', 
+        'ИТН', 
+        'МУТРИ ВЪН!',
+    ],
+    sort_by = None,
+    include_total = True,
+    caption = ''
+):
+    
+    '''
+    Similar to ekatte selection plot, but returns result by EKATTE in addition to aggregate results.
+    '''
+    
+    compare_df = compare_by_ekatte(
+        results1, 
+        results2,
+        label1 = label1,
+        label2 = label2,
+        include_totals=True
+    )
+        
+    settlements = compare_df[compare_df.index.isin(ekatte_codes)]
+    
+    if parties_mvp is not None:
+        order = ['регион', 'населено место']
+        for party in parties_mvp:
+            order.append(f'{party} {label1}')
+            order.append(f'{party} {label2}')
+            order.append(f'спад {party}')
+        order+= [f'общо {label1}', f'общо {label2}', f'общо спад']
+    else:
+        order = settlements.columns
+
+    table = settlements[order]
+    
+    if sort_by is not None:
+        table = table.sort_values(sort_by, ascending = False)
+        
+    if include_total:
+        totals = {}
+        
+        for col in order:
+            if col in ['регион', 'населено место']:
+                totals[col] = np.nan
+            elif label1 in col or label2 in col and (not 'спад' in col):
+                totals[col] = table[col].sum()
+            elif 'спад' in col:
+                if 'спад' in col[:4]:
+                    p = col[5:]
+                elif 'спад' in col[-4:]:
+                    p = col[:-5]
+                else:
+                    raise ValueError('unexpected column', col)
+                totals[col] = (totals[f'{p} {label1}'] - totals[f'{p} {label2}'])/totals[f'{p} {label1}']
+            else:
+                raise ValueError('unexpected column', col)
+            
+           
+        table.loc['Общо'] = pd.Series(totals)
+    
+    table.replace([np.inf, -np.inf], np.nan, inplace = True)
+
+    def make_pretty(styler, caption):
+        styler.set_caption(caption)
+        styler.background_gradient(axis=1, vmin = -1, vmax = 1, subset = [x for x in styler.data if 'спад' in x], cmap="RdYlGn_r")
+        styler.format(na_rep = '-', precision = 2)
+#         styler.background_gradient(axis=1, vmin = 100, vmax = 100, subset = [party], cmap="RdYlGn_r")
+        return styler
+    
+    return table.style.pipe(make_pretty, caption = caption)
+
+def large_drop_ekatte(
+    results1,
+    results2,
+    party,
+    label1 = 'април',
+    label2 = 'юли',
+    min_drop = 0.5,
+    min_votes = 20,
+    sort_by = None,
+    parties_mvp = [
+        'ГЕРБ-СДС',
+        'БСП',
+        'ДПС',
+        'ДБ',
+        'ИТН',
+        'МУТРИ ВЪН!'
+    ]
+):
+    '''
+    Produces a styled table filtered to include only EKATTE where the drop in support for ``party`` 
+    exceeded ``min_drop`` and where the number of votes cast for ``party`` in ``results1`` exceeds
+    ``min_votes``.
+    
+    Parameters
+    ----------
+    results1 : df
+        Number of votes per party indexed by station ID.
+        The initial columns contain party results.
+        The last seven columns are assumed to be:
+        ['region', 'municipality', 'admin_reg', 'sid', 'region_name', 'place',
+       'ekatte']
+    results2 : df 
+        Number of votes per party indexed by station ID.
+        The initial columns contain party results.
+        The last seven columns are assumed to be:
+        ['region', 'municipality', 'admin_reg', 'sid', 'region_name', 'place',
+       'ekatte']
+    party : str 
+        A party label. Should be in ``results1`` and ``results2``.
+    label1 : str, default април
+        A label that will be attached to party results from results1
+    label2 : str, default юли
+        A label that will be attached to party results from results2    
+    '''
+    
+    compare_df = compare_by_ekatte(
+        results1, 
+        results2,
+        label1 = label1,
+        label2 = label2,
+        include_totals=True
+    )
+        
+    ekatte_codes = compare_df[(compare_df[f'{party} {label1}']>min_votes) & (compare_df[f'спад {party}']>min_drop)].index
+    
+    table = ekatte_selection_comparison_table(
+        results1, 
+        results2,
+        ekatte_codes,
+        label1 = label1,
+        label2 = label2,
+        parties_mvp = parties_mvp,
+        sort_by = sort_by
+    ).data
+    
+    for col in table:
+        if 'спад' in col:
+            table[col] = table[col]*100
+            
+    table.rename(columns = {col : f'{col} %' for col in table.columns if 'спад' in col}, inplace = True)
+        
+    caption = f'Населени места със спад над {min_drop*100}% за {party}'
+    def make_pretty(styler, caption = 'Тест'):
+        styler.set_caption(caption)
+        styler.background_gradient(axis=1, vmin = -100, vmax = 100, subset = [x for x in styler.data if 'спад' in x], cmap="RdYlGn_r")
+        styler.format(na_rep = '-', precision = 2)
+        return styler
+    
+    return table.style.pipe(make_pretty, caption = caption)
+
+def sid_selection_multi_plot(
+    results_list,
+    sids,
+    labels = None,
+    parties_filter = [
+        'БСП', 
+        'ГЕРБ-СДС', 
+        'ДБ', 
+        'ДПС', 
+        'ИТН', 
+#         'МУТРИ ВЪН!',
+        'ПП'
+    ],
+    title = ''
+):
+    '''
+    Produces a barplot of the aggregated results for the selected parties in the specified regions.
+        
+    Parameters
+    ----------
+    results list : list of df
+        Results per election. Each df contains number of votes per party indexed by station ID.
+    sids : list 
+        List of valid station IDs.
+    labels : list of str, optional, default None
+        Labels to associate with each election. If ``None`` will simply number results in results_list 
+        1,2,3 ... N.
+    title : str, default ''
+        Optional plot title/table caption.
+                
+    '''    
+    
+    ss = []
+    
+    for res in results_list:
+        ss.append(sid_selection_totals(res, sids, parties_filter, include_others = False))
+        
+        
+    title = f'{title}. Брой секции: {len(sids)}.'
+    
+        
+    comparison_barplot(ss, labels = labels, title=title)
+    
+    table = sid_selection_multi_table(results_list, labels, sids, ss[0].index)
+    
+    return table 
+
+def sid_selection_multi_table(results, labels, sids, parties_mvp):
+    '''
+    Collects results from multiple elections in a signle table.
+    
+    Parameters
+    ----------
+    results : list of df 
+        Results data, indexed by station ID.
+    labels : list of str 
+        Labels to attach to each set of results in results.
+    sids : list of str 
+        Station IDs
+    parties_mvp : list of str
+        Party labels to focus on. The rest of the parties will be lumped together.
+        
+    Returns
+    -------
+    df 
+    '''
+    nuisance_cols = ['place', 'region', 'municipality', 'admin_reg', 'sid', 'ekatte', 'region_name']
+
+    index = sids
+    
+    reg_sids = pd.DataFrame(index = index)
+    reg_sids.index.name = 'секция'
+
+#     reg_sids['населено место'] = station_addresses()['place']
+    reg_sids['адрес'] = station_addresses()['address']
+    
+    for i,res in enumerate(results):
+        reg_sids[f'гласове {labels[i]}'] = res.drop(columns = nuisance_cols)[res.index.isin(sids)].sum(axis=1) 
+    
+    for party in parties_mvp:
+        for i, res in enumerate(results):
+            if party in res:
+                reg_sids[f'{party} {labels[i]}'] = res[res.index.isin(sids)][party]
+            else:
+                reg_sids[f'{party} {labels[i]}'] = [np.nan] * len(sids)
+    
+    reg_sids.loc['Общо'] = reg_sids.sum(numeric_only=True)
+        
+#     order = ['населено место', 'адрес']
+    order = ['адрес']
+    for label in labels:
+        order += [f'гласове {label}']
+    for party in parties_mvp:
+        for label in labels:
+            order += [f'{party} {label}']
+        
+
+    return reg_sids[order].sort_index()    
+
+def sid_selection_totals(results_by_sid, sids, parties_filter, include_others = False):
+    '''
+    Calculates party totals in station IDs specified.
+    
+    Parameters
+    ----------
+    results_by_sid : df
+        DataFrame indexed by station ID.
+    sids : list of str
+        Station IDs.
+    parties_filter : list
+        List of party labels. Should be in results_by_sid.
+    include_others : bool, default True
+        If ``True`` will include a total sum of parties outside of ``parties_filter``.
+        
+    Returns
+    -------
+    s : series
+        Totals for the parties in parties_filter and a separate total for all other parties.
+        Sorted descending by the number of votes of parties in ``parties_filter``.
+    '''
+    
+    selection = results_by_sid.drop(columns = 'ekatte')[results_by_sid.index.isin(sids)].sum(numeric_only=True)
+    
+    s = {}
+    for party in parties_filter:
+        if party in selection:
+            s[party] = selection[party]
+        else:
+            s[party] = np.nan
+        
+    s = pd.Series(s).sort_values(ascending = False)
+    if include_others:
+        other = selection[[x for x in selection.index if x not in parties_filter]]
+        s['други'] = other.sum()
+        
+    return s
+
