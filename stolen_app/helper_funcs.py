@@ -388,6 +388,8 @@ def compare_by_ekatte(
         if include_pct:
             data[f'{party} {label1} %'] = pct1[party]
             data[f'{party} {label2} %'] = pct2[party]
+            
+    # TODO: include others
     
     if include_totals:
         data[f'общо {label1}'] = results1.sum(axis = 1)
@@ -626,7 +628,12 @@ def single_ekatte_plot(
 
     
     def make_pretty(styler):
-        styler.set_caption("{}".format(april.loc[(april['ekatte'] == ekatte)]['place'].values[0]))
+        styler.set_caption("{}".format(april.loc[(april['ekatte'] == ekatte)]['place'].values[0])).set_table_styles(
+            [dict(
+                selector="caption", 
+                props=[("font-size", "120%"), ("font-weight", "bold")]
+            )]
+        )
         styler.background_gradient(axis=1, vmin = -100, vmax = 100, subset = [x for x in reg_sids if 'спад' in x], cmap="RdYlGn_r")
         styler.format(na_rep = '-', precision = 0)
         return styler
@@ -1236,7 +1243,8 @@ def ekatte_selection_comparison_table(
 ):
     
     '''
-    Similar to ekatte selection plot, but returns result by EKATTE in addition to aggregate results.
+    Returns result by EKATTE and aggregate results (for all EKATTE codes) for the selected
+    parties.
     '''
     
     compare_df = compare_by_ekatte(
@@ -1368,9 +1376,14 @@ def large_drop_ekatte(
             
     table.rename(columns = {col : f'{col} %' for col in table.columns if 'спад' in col}, inplace = True)
         
-    caption = f'Населени места със спад над {min_drop*100}% за {party}'
+    caption = f'Населени места със спад над {min_drop*100}% юли/април 2021 за {party} и поне {min_votes} гласа през април'
     def make_pretty(styler, caption = 'Тест'):
-        styler.set_caption(caption)
+        styler.set_caption(caption).set_table_styles(
+            [dict(
+                selector="caption", 
+                props=[("font-size", "120%"), ("font-weight", "bold")]
+            )]
+        )
         styler.background_gradient(axis=1, vmin = -100, vmax = 100, subset = [x for x in styler.data if 'спад' in x], cmap="RdYlGn_r")
         styler.format(na_rep = '-', precision = 2)
         return styler
@@ -1514,3 +1527,264 @@ def sid_selection_totals(results_by_sid, sids, parties_filter, include_others = 
         
     return s
 
+def compare_by_address(
+    results1,
+    results2, 
+    label1='април',
+    label2='юли',
+    drop_abroad = True, 
+    include_pct = False,
+    include_totals = False,
+):
+    '''
+    Returns a dataframe with the number of votes for each party per address 
+    in both elections + some additional columns:
+    * drop per party (as proportion of result1)
+    * location (sourced from result2)
+    
+    Addresses sourced from October 22 data.
+    
+    Only returns parties that participated in both elections.
+    
+    Parameters
+    ----------
+    results1 : df
+        Number of votes per party indexed by station ID.
+        The initial columns contain party results.
+        The last seven columns are assumed to be:
+        ['region', 'municipality', 'admin_reg', 'sid', 'region_name', 'place',
+       'ekatte']
+    results2 : df 
+        Number of votes per party indexed by station ID.
+        The initial columns contain party results.
+        The last seven columns are assumed to be:
+        ['region', 'municipality', 'admin_reg', 'sid', 'region_name', 'place',
+       'ekatte']
+    label1 : str, default април
+        A label that will be attached to party results from results1
+    label2 : str, default юли
+        A label that will be attached to party results from results2
+    drop_abroad : bool, default True
+        If ``True`` will drop EKATTE codes outside of the country (6-digit EKATTE codes starting with '100').
+    include_pct : bool, default False
+        If ``True``, will include party pct. support.
+    include_totals : bool, default False
+        If ``True``, will include total votes in each election and total activity drop.
+        
+    Returns
+    -------
+    party_votes : df 
+        A dataframe indexed by EKATTE code.
+        Columns: region, location, party 1 votes 1, party 1 votes 2, party 1 drop pct, etc.
+    '''
+
+    parties_both = set(results1.columns[:-7]) & set(results2.columns) 
+    
+    addr = station_addresses()
+    
+    results1 = results1.copy()
+    results2 = results2.copy()
+    
+    results1['address'] = addr['address']
+    results2['address'] = addr['address']
+    
+    if drop_abroad:
+        results1 = results1.loc[[x for x in results1.index if x[:2] !='32']]
+        results2 = results2.loc[[x for x in results2.index if x[:2] !='32']]
+    
+    regions = results1.groupby('address').first()[['region_name','place']]
+    
+    results1 = results1.groupby('address').sum(numeric_only = True).drop(columns = ['ekatte'])
+    results2 = results2.groupby('address').sum(numeric_only = True).drop(columns = ['ekatte'])
+    
+    ids = set(results1.index) | set(results2.index)
+    
+    if include_pct:
+        pct1 = results1.divide(results1.sum(axis = 1), axis = 0)
+        pct2 = results2.divide(results2.sum(axis = 1), axis = 0)
+    
+    
+    order = results1[list(parties_both)].sum().sort_values(ascending = False).index
+    
+    data = pd.DataFrame(index = [x for x in ids])
+    data.index.name = 'адрес'
+    data['регион'] = regions['region_name']
+    data['населено место'] = regions['place']
+    
+    for party in order:
+        data[f'{party} {label1}'] = results1[party]
+        data[f'{party} {label2}'] = results2[party]
+        data[f'спад {party}'] = (data[f'{party} {label1}'] - data[f'{party} {label2}'])/data[f'{party} {label1}']
+        if include_pct:
+            data[f'{party} {label1} %'] = pct1[party]
+            data[f'{party} {label2} %'] = pct2[party]
+    
+    if include_totals:
+        data[f'общо {label1}'] = results1.sum(axis = 1)
+        data[f'общо {label2}'] = results2.sum(axis = 1)
+        data['общо спад'] = (data[f'общо {label1}'] - data[f'общо {label2}'])/data[f'общо {label1}']
+        
+    
+    return data 
+
+def address_selection_comparison_table(
+    results1,
+    results2,
+    addresses,
+    label1 = 'април',
+    label2 = 'юли',
+    parties_mvp = [
+        'БСП', 
+        'ГЕРБ-СДС', 
+        'ДБ', 
+        'ДПС', 
+        'ИТН', 
+        'МУТРИ ВЪН!',
+    ],
+    sort_by = None,
+    include_total = True,
+    caption = ''
+):
+    
+    '''
+    Similar to ekatte selection plot, but returns result by address in addition to aggregate results.
+    '''
+    
+    compare_df = compare_by_address(
+        results1, 
+        results2,
+        label1 = label1,
+        label2 = label2,
+        include_totals=True
+    )
+        
+    settlements = compare_df[compare_df.index.isin(addresses)]
+    
+    if parties_mvp is not None:
+        order = ['регион', 'населено место']
+        for party in parties_mvp:
+            order.append(f'{party} {label1}')
+            order.append(f'{party} {label2}')
+            order.append(f'спад {party}')
+        order+= [f'общо {label1}', f'общо {label2}', f'общо спад']
+    else:
+        order = settlements.columns
+
+    table = settlements[order]
+    
+    if sort_by is not None:
+        table = table.sort_values(sort_by, ascending = False)
+        
+    if include_total:
+        totals = {}
+        
+        for col in order:
+            if col in ['регион', 'населено место']:
+                totals[col] = np.nan
+            elif label1 in col or label2 in col and (not 'спад' in col):
+                totals[col] = table[col].sum()
+            elif 'спад' in col:
+                if 'спад' in col[:4]:
+                    p = col[5:]
+                elif 'спад' in col[-4:]:
+                    p = col[:-5]
+                else:
+                    raise ValueError('unexpected column', col)
+                totals[col] = (totals[f'{p} {label1}'] - totals[f'{p} {label2}'])/totals[f'{p} {label1}']
+            else:
+                raise ValueError('unexpected column', col)
+            
+           
+        table.loc['Общо'] = pd.Series(totals)
+    
+    table.replace([np.inf, -np.inf], np.nan, inplace = True)
+
+    def make_pretty(styler, caption):
+        styler.set_caption(caption)
+        styler.background_gradient(axis=1, vmin = -1, vmax = 1, subset = [x for x in styler.data if 'спад' in x], cmap="RdYlGn_r")
+        styler.format(na_rep = '-', precision = 2)
+#         styler.background_gradient(axis=1, vmin = 100, vmax = 100, subset = [party], cmap="RdYlGn_r")
+        return styler
+    
+    return table.style.pipe(make_pretty, caption = caption)
+
+
+def large_drop_addresses(
+    results1,
+    results2,
+    party,
+    label1 = 'април',
+    label2 = 'юли',
+    min_drop = 0.5,
+    min_votes = 20,
+    sort_by = None,
+    parties_mvp = [
+        'ГЕРБ-СДС',
+        'БСП',
+        'ДПС',
+        'ДБ',
+        'ИТН',
+        'МУТРИ ВЪН!'
+    ]
+):
+    '''
+    Produces a styled table filtered to include only polling locations where the drop in support for ``party`` 
+    exceeded ``min_drop`` and where the number of votes cast for ``party`` in ``results1`` exceeds
+    ``min_votes``.
+    
+    Parameters
+    ----------
+    results1 : df
+        Number of votes per party indexed by station ID.
+        The initial columns contain party results.
+        The last seven columns are assumed to be:
+        ['region', 'municipality', 'admin_reg', 'sid', 'region_name', 'place',
+       'ekatte']
+    results2 : df 
+        Number of votes per party indexed by station ID.
+        The initial columns contain party results.
+        The last seven columns are assumed to be:
+        ['region', 'municipality', 'admin_reg', 'sid', 'region_name', 'place',
+       'ekatte']
+    party : str 
+        A party label. Should be in ``results1`` and ``results2``.
+    label1 : str, default април
+        A label that will be attached to party results from results1
+    label2 : str, default юли
+        A label that will be attached to party results from results2    
+    '''
+    
+    compare_df = compare_by_address(
+        results1, 
+        results2,
+        label1 = label1,
+        label2 = label2,
+        include_totals=True
+    )
+        
+    ekatte_codes = compare_df[(compare_df[f'{party} {label1}']>min_votes) & (compare_df[f'спад {party}']>min_drop)].index
+    
+    table = address_selection_comparison_table(
+        results1, 
+        results2,
+        ekatte_codes,
+        label1 = label1,
+        label2 = label2,
+        parties_mvp = parties_mvp,
+        sort_by = sort_by
+    ).data
+    
+    for col in table:
+        if 'спад' in col:
+            table[col] = table[col]*100
+            
+    table.rename(columns = {col : f'{col} %' for col in table.columns if 'спад' in col}, inplace = True)
+        
+    caption = f'Населени места със спад над {min_drop*100}% за {party}'
+    def make_pretty(styler, caption = 'Тест'):
+        styler.set_caption(caption)
+        styler.background_gradient(axis=1, vmin = -100, vmax = 100, subset = [x for x in styler.data if 'спад' in x], cmap="RdYlGn_r")
+        styler.format(na_rep = '-', precision = 2)
+        return styler
+    
+    return table.style.pipe(make_pretty, caption = caption)
