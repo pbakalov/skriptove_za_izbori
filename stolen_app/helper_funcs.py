@@ -249,6 +249,7 @@ def compare_by_sid(
     label2 = 'юли',
     include_drops = True,
     drop_abroad = False,
+    include_municipality = False,
 ):
     '''
     Returns a dataframe with the number of votes for each party per Station ID
@@ -281,6 +282,8 @@ def compare_by_sid(
         If ``True`` will include the relative drop of support for each party 
     drop_abroad : bool, default False
         If ``True`` will drop station IDs outside of the country (starting with '32')
+    include_municipality: bool, default False
+        If `True`, will include a column with municipality ID (characters 3-4 of the SID, SID[2:4])
         
     Returns
     -------
@@ -304,6 +307,9 @@ def compare_by_sid(
     data['населено място'] = results2['place']
     data['екатте'] = results2['ekatte']
     data['регион'] = results2['region_name']
+    if include_municipality:
+        data['община'] = [sid[2:4] for sid in data.index]
+
     data['адрес'] = addr['address']
     
     for party in order:
@@ -661,7 +667,6 @@ def sid_to_ekatte(results, station_id):
         The EKATTE code of the specified station ID
     '''
     return results.loc[station_id]['ekatte']
-    
 
 def ekatte_map(
     data, 
@@ -695,23 +700,15 @@ def ekatte_map(
     with open("../geojson/settlements.geojson", "r", encoding="utf-8") as f:
         settlements = geojson.load(f)
         
-    
-    #ns = []
+    print ('Брой населени места: ', len(data)) 
     for item in settlements['features']:
-    #         print (item['type'], item['properties'])
         item['id'] = item['properties']['ekatte'] 
-#         ns.append(item)
-            
-    #ns_geo = settlements.copy()
-    
-    #ns_geo['features'] = ns
-    #len(ns_geo['features'])
         
     data['ekatte'] = [str(x).zfill(5) for x in data.index]
 
 
-    fig = px.choropleth(
-    #     activity[activity.index.isin(active_filter)],
+#     fig = px.choropleth(
+    fig = px.choropleth_mapbox(
         data,
         geojson=settlements, 
         locations='ekatte', 
@@ -719,31 +716,29 @@ def ekatte_map(
         color_continuous_scale="Viridis",
         range_color=range_color,
         labels=labels, 
-        hover_data = list(labels.keys()), #['region', 'aj_drop_votes', 'april', 'july'],
-        scope="europe",
-        fitbounds = 'locations',
-        featureidkey = 'properties.ekatte'
+        hover_data = list(labels.keys()),
+        featureidkey = 'properties.ekatte',
+        # choropleth mapbox options
+        mapbox_style = 'carto-positron',
+        zoom=7, 
+        center = {
+            "lat": 42.75, 
+            "lon": 25.6
+        },
     )
-
-    fig.update_geos(
-    #     fitbounds="locations", 
-    #     resolution=50,
-        visible=False, #hide plotly background
-    #     showframe=True, #what? 
-    #     projection={"type": "mercator"},
-    )
-
 
     fig.update_layout(
-        margin={"r":0,"t":0,"l":0,"b":0},
+        margin={"r":0, "t":0, "l":0,"b":0},
         width = 1400,
-        height = 1200,
+        height = 850,
         title = title,
+        title_y = 0.95,
+        title_x = 0.1,
+        font_size = 21
     )
+    
+    return fig
 
-    fig.show()
-    
-    
 def best_regs_by_party(results, party, top = 40):
     results.sort_values(by = 'БВ %', ascending = False).head(100)
     
@@ -1376,7 +1371,7 @@ def large_drop_ekatte(
             
     table.rename(columns = {col : f'{col} %' for col in table.columns if 'спад' in col}, inplace = True)
         
-    caption = f'Населени места със спад над {min_drop*100}% юли/април 2021 за {party} и поне {min_votes} гласа през април'
+    caption = f'Населени места с над {min_votes} гласа за {party} през април 2021 и спад в подкрепата за {party} над {min_drop*100}% през юли 2021'
     def make_pretty(styler, caption = 'Тест'):
         styler.set_caption(caption).set_table_styles(
             [dict(
