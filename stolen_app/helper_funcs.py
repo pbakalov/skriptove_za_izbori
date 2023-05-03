@@ -2,9 +2,58 @@ import pandas as pd
 import plotly.graph_objects as go
 import plotly.express as px
 import geojson
+import json 
 import numpy as np 
 
 from IPython.display import display 
+
+data_dir = '.'
+
+styles = [
+    #table properties
+    dict(selector=" ", 
+         props=[("margin","0"),
+                ("font-family",'"Helvetica", "Arial", sans-serif'),
+                ("border-collapse", "collapse"),
+                ("border","none"),
+#                 ("border", "2px solid #ccf")
+                   ]),
+
+    #header color - optional
+#     dict(selector="thead", 
+#          props=[("background-color","#cc8484")
+#                ]),
+    
+    dict(selector="caption", 
+         props=[("font-size", "120%"), ("font-weight", "bold")]),
+
+    #background shading
+    dict(selector="tbody tr:nth-child(even)",
+         props=[("background-color", "#fff")]),
+    dict(selector="tbody tr:nth-child(odd)",
+         props=[("background-color", "#eee")]),
+
+    #cell spacing
+    dict(selector="td", 
+         props=[("padding", ".5em")]),
+
+    #header cell properties
+    dict(selector="th", 
+         props=[("font-size", "100%"),
+                ("text-align", "center")]),
+]
+
+def make_pretty(styler, caption):
+    styler.set_caption(caption).set_table_styles(
+        [dict(
+            selector="caption", 
+            props=[("font-size", "120%"), ("font-weight", "bold")]
+        )]
+    )
+    styler.background_gradient(axis=1, vmin = -100, vmax = 100, subset = [x for x in styler.data if 'спад' in x], cmap="RdYlGn_r")
+    styler.format(na_rep = '-', precision = 2)
+    return styler
+
 
 def load_votes_data(month):
     '''
@@ -12,7 +61,7 @@ def load_votes_data(month):
     
     Parameters
     ----------
-    month : {'april', 'july', 'oct22'}
+    month : {'april', 'july', 'nov21', 'oct22'}
     
     Returns
     -------
@@ -21,27 +70,42 @@ def load_votes_data(month):
         Columns are party names + suffix indicating the month.
         
     '''
+    
+    from rename_map import nov21_rename_map, apr23_rename_map
+    
     if month == 'april':
-        april = pd.read_csv('votes_04.04.2021_padded.csv', index_col = [0], dtype = {'station no': str})
+        april = pd.read_csv(f'{data_dir}/votes_04.04.2021_padded.csv', index_col = [0], dtype = {'station no': str})
         april = april[['station no'] + [n for n in april if ('result' in n and 'paper' not in n and 'machine' not in n)]]
-        april_ = april.groupby('station no').sum()
-        april_.rename(columns = {x : x[:-7] for x in april_}, inplace = True)
-        return april_
+        data_ = april.groupby('station no').sum()
+        data_.rename(columns = {x : x[:-7] for x in data_}, inplace = True)
     
     elif month == 'july':
-        july = pd.read_csv('votes_11.07.2021_padded.csv', index_col = [0], dtype = {'station no': str})
-        july_ = july[['station no'] + [n for n in july if 'result' in n]].groupby('station no').sum()
-        july_.rename(columns = {x : x[:-7] for x in july_}, inplace = True)
-        return july_
+        july = pd.read_csv(f'{data_dir}/votes_11.07.2021_padded.csv', index_col = [0], dtype = {'station no': str})
+        data_ = july[['station no'] + [n for n in july if 'result' in n]].groupby('station no').sum()
+        data_.rename(columns = {x : x[:-7] for x in data_}, inplace = True)
     
-    elif month == 'oct22':
-        data = pd.read_csv('votes_02.10.2022_padded.csv', index_col = [0], dtype = {'station no': str})
+    elif month == 'nov21':
+        data = pd.read_csv(f'{data_dir}/votes_14.11.2021_padded.csv', index_col = [0], dtype = {'station no': str})
         data_ = data[['station no'] + [n for n in data if 'result' in n]].groupby('station no').sum()
         data_.rename(columns = {x : x[:-7] for x in data_}, inplace = True)
-        return data_
-        
+        data_.rename(columns = nov21_rename_map, inplace = True)
+    
+    elif month == 'oct22':
+        data = pd.read_csv(f'{data_dir}/votes_02.10.2022_padded.csv', index_col = [0], dtype = {'station no': str})
+        data_ = data[['station no'] + [n for n in data if 'result' in n]].groupby('station no').sum()
+        data_.rename(columns = {x : x[:-7] for x in data_}, inplace = True)
+    
+    elif month == 'apr23':
+        data_ = pd.read_csv(f'{data_dir}/votes_02.04.2023_padded.csv', index_col = [0], dtype = {'station no': str})
+        data_ = data_[['station no'] + [n for n in data_ if ('result' in n and 'paper' not in n and 'machine' not in n)]]
+        data_ = data_.groupby('station no').sum()
+        data_.rename(columns = {x : x[:-7] for x in data_}, inplace = True)
+        data_.rename(columns = apr23_rename_map, inplace = True)
+
     else:
-        raise ValueError('expected july, april, or oct22, got', month)
+        raise ValueError('expected july, april, nov21, oct22, or apr23, got', month)
+
+    return data_
 
 def load_station_locations(month):
     '''
@@ -62,15 +126,21 @@ def load_station_locations(month):
     usecols = [0, 1, 2, 3, 4]
     
     if month == 'april':
-        source_file = 'sections_04.04.2021.txt'
+        source_file = f'{data_dir}/sections_04.04.2021.txt'
     elif month=='july': 
-        source_file = 'sections_11.07.2021.txt'
+        source_file = f'{data_dir}/sections_11.07.2021.txt'
+    elif month=='nov21': 
+        source_file = f'{data_dir}/sections_14.11.2021.txt'
     elif month=='oct22':
-        source_file = 'sections_02.10.2022_corr.txt' #fixed address of one station in USA
+        source_file = f'{data_dir}/sections_02.10.2022_corr.txt' #fixed address of one station in USA
+        names = ['station no', 'MIR', 'MIR name','EKATTE', 'place', 'address', 'mobile', 'ship', 'machine']
+        usecols = [0, 1, 2, 3, 4, 5]
+    elif month=='apr23':
+        source_file = f'{data_dir}/sections_02.04.2023.txt' 
         names = ['station no', 'MIR', 'MIR name','EKATTE', 'place', 'address', 'mobile', 'ship', 'machine']
         usecols = [0, 1, 2, 3, 4, 5]
     else:
-        raise ValueError('expected july, april, or oct22, got', month)
+        raise ValueError('expected july, april, nov21, oct22, or apr23, got', month)
         
         
     stations = pd.read_csv(
@@ -83,19 +153,6 @@ def load_station_locations(month):
     ).set_index('station no')
     return stations
     
-    #elif month=='july': 
-    #    j_stations = pd.read_csv(
-    #        'sections_11.07.2021.txt', 
-    #        usecols = [0, 1, 2, 3, 4],
-    #        dtype = {'station no': str},
-    #        header = None, 
-    #        names = ['station no', 'MIR', 'MIR name','EKATTE', 'place', 'mobile', 'ship', 'machine'],  
-    #        delimiter = ';'
-    #    ).set_index('station no')
-    #    return j_stations
-        
-
-
 def add_regional_codes(results, stations):
     '''
     Adds region, municipality, and administrative region codes to a results dataframe
@@ -111,7 +168,7 @@ def add_regional_codes(results, stations):
     stations : dataframe 
         indexed by SID, contains location data (placenames)
     '''
-    
+   
     if not results.index.equals(stations.index):
         raise ValueError ('results and stations index don\'t match')
         
@@ -119,12 +176,24 @@ def add_regional_codes(results, stations):
     
     results['region'] = [sid[:2] for sid in results.index]
     results['municipality'] = [sid[2:4] for sid in results.index]
+    results['municipality_name'] = [sid_to_mun(sid) if sid[:2] < '32' else 'чужбина' for sid in results.index]
     results['admin_reg'] = [sid[4:6] for sid in results.index]
     results['sid'] = [sid[6:] for sid in results.index]
     results['region_name'] = stations['MIR name']
     results['place'] = stations['place'].copy()
     results['ekatte'] = stations['EKATTE'].copy()
+    if 'address' in stations:
+        results['address'] = stations['address'].copy()
+    else:
+        results['address'] = ['-']*len(results.index) 
     return results
+
+def sid_to_mun(sid):
+
+    with open('xxyy_to_municipality_map.json', 'r') as f:
+        sid_to_mun = json.loads(f.read())
+
+    return sid_to_mun[sid[:4]]
 
 def load_full(month):
     '''
@@ -132,7 +201,7 @@ def load_full(month):
     
     Parameters
     ----------
-    month : {'april', 'july', 'oct22'}
+    month : {'april', 'july', 'nov21', 'oct22'}
     
     Returns
     -------
@@ -311,6 +380,7 @@ def compare_by_sid(
         data['община'] = [sid[2:4] for sid in data.index]
 
     data['адрес'] = addr['address']
+    data['адрес'] = [x.replace(',', ';') for x in data['адрес'].fillna('не е наличен')]
     
     for party in order:
         data[f'{party} {label1}'] = results1[party]
@@ -327,6 +397,7 @@ def compare_by_ekatte(
     drop_abroad = True, 
     include_pct = False,
     include_totals = False,
+    include_municipality = False,
 ):
     '''
     Returns a dataframe with the number of votes for each party per EKATTE code 
@@ -361,6 +432,8 @@ def compare_by_ekatte(
         If ``True``, will include party pct. support.
     include_totals : bool, default False
         If ``True``, will include total votes in each election and total activity drop.
+    include_municipality: bool, default False
+        If `True`, will include a column with municipality ID (characters 3-4 of the SIDs in each settlement).
         
     Returns
     -------
@@ -386,6 +459,8 @@ def compare_by_ekatte(
     data.index.name = 'ЕКАТТЕ'
     data['регион'] = regions['region_name']
     data['населено место'] = regions['place']
+    #if include_municipality:
+    #    data['община'] = [sid[2:4] for sid in data.index]
     
     for party in order:
         data[f'{party} {label1}'] = results1[party]
@@ -447,12 +522,17 @@ def summary_plot(data, n):
             )
         )
         
-    fig.update_layout(title = f'Ако въведеш филтри в таблицата долу, графиката ще се обнови. Брой секции: {n}')
+    fig.update_layout(
+        title = f'Въведи филтри в таблицата долу, за да обновиш графиката. Брой секции: {n}',
+        font = dict(size = 19)
+    )
         
     return fig
 
 def summary_table(data):
     ''' 
+    Produces a summary table: April. vs. July votes for parties in data.
+
     Parameters
     ----------
     data : series
@@ -700,10 +780,11 @@ def ekatte_map(
     with open("../geojson/settlements.geojson", "r", encoding="utf-8") as f:
         settlements = geojson.load(f)
         
-    print ('Брой населени места: ', len(data)) 
+    print ('Брой населени места: ', len(data), col)
     for item in settlements['features']:
         item['id'] = item['properties']['ekatte'] 
-        
+
+    data = data.copy()
     data['ekatte'] = [str(x).zfill(5) for x in data.index]
 
 
@@ -729,12 +810,27 @@ def ekatte_map(
 
     fig.update_layout(
         margin={"r":0, "t":0, "l":0,"b":0},
-        width = 1400,
-        height = 850,
+        #width = 1400,
+        #height = 850,
+        width = 1200,
+        height = 750,
         title = title,
         title_y = 0.95,
         title_x = 0.1,
         font_size = 21
+    )
+    
+    fig.update_layout(
+        coloraxis_colorbar=dict(
+            title="% подкрепа",
+            #thicknessmode="pixels",
+            #lenmode="pixels",
+            #yanchor="top",y=1,
+            #ticks="outside",
+            #tickvals=[0,4,8,12],
+            #ticktext=["Low", "Low Medium", "High Medium", "High"],
+            #dtick=4
+        )
     )
     
     return fig
@@ -857,7 +953,8 @@ def sid_selection_plot(
         'ИТН', 
         'МУТРИ ВЪН!',
     ],
-    title = ''
+    title = '',
+    return_fig = False,
 ):
     '''
     
@@ -873,6 +970,8 @@ def sid_selection_plot(
         Party names to include.
     title : str, optional, default ''
         Will be displayed above the plot.
+    return_fig : bool, default False
+        If `True`, will return the figure object.
         
     '''
 
@@ -880,7 +979,7 @@ def sid_selection_plot(
     
     aa = april.drop(columns=['ekatte'])[april.index.isin(sids)].sum(numeric_only=True)
     jj = july.drop(columns=['ekatte'])[july.index.isin(sids)].sum(numeric_only=True)
-    print ((aa.sum() - jj.sum())/aa.sum()*100)
+    print ('activity drop:',(aa.sum() - jj.sum())/aa.sum()*100)
 
     s = aa[parties_filter].copy().sort_values(ascending=False)
     ss = jj[parties_filter].copy()
@@ -920,7 +1019,6 @@ def sid_selection_plot(
         height = 650,
 #         width = 1200
     )
-    fig.show()
 
     reg_sids = sid_selection_results(
         april[april.index.isin(sids)], 
@@ -938,10 +1036,12 @@ def sid_selection_plot(
         styler.format(na_rep = '-', precision = 0)
         return styler
     
-    display(reg_sids.style.pipe(make_pretty))
-    
-    return reg_sids.style.pipe(make_pretty)
-
+    #display(reg_sids.style.pipe(make_pretty))
+    if return_fig:
+        return reg_sids.style.pipe(make_pretty), fig
+    else:
+        fig.show()
+        return reg_sids.style.pipe(make_pretty)
 
 def sid_selection_results(
     aa_by_sid, 
@@ -1121,7 +1221,7 @@ def ekatte_selection_totals(results_by_sid, ekatte_codes, parties_filter):
     s['други'] = other.sum()
     return s
     
-def comparison_barplot(series_list, labels = None, title=None):
+def comparison_barplot(series_list, labels = None, title=None, return_fig = False):
     '''
     Produces a comparison bar plot of series in series_list.
     
@@ -1163,6 +1263,9 @@ def comparison_barplot(series_list, labels = None, title=None):
         height = 650,
 #         width = 1200
     )
+    if return_fig:
+        return fig
+    
     fig.show()
     
 
@@ -1398,7 +1501,10 @@ def sid_selection_multi_plot(
 #         'МУТРИ ВЪН!',
         'ПП'
     ],
-    title = ''
+    include_others = False, 
+    top = None,
+    title = '',
+    return_fig = True,
 ):
     '''
     Produces a barplot of the aggregated results for the selected parties in the specified regions.
@@ -1420,17 +1526,15 @@ def sid_selection_multi_plot(
     ss = []
     
     for res in results_list:
-        ss.append(sid_selection_totals(res, sids, parties_filter, include_others = False))
+        ss.append(sid_selection_totals(res, sids, parties_filter, include_others = include_others, top = top))
         
-        
-    title = f'{title}. Брой секции: {len(sids)}.'
+    title = f'{title}. секции: {len(sids)}.'
     
-        
-    comparison_barplot(ss, labels = labels, title=title)
+    fig = comparison_barplot(ss, labels = labels, title=title, return_fig = return_fig)
     
     table = sid_selection_multi_table(results_list, labels, sids, ss[0].index)
-    
-    return table 
+   
+    return table, fig 
 
 def sid_selection_multi_table(results, labels, sids, parties_mvp):
     '''
@@ -1484,7 +1588,7 @@ def sid_selection_multi_table(results, labels, sids, parties_mvp):
 
     return reg_sids[order].sort_index()    
 
-def sid_selection_totals(results_by_sid, sids, parties_filter, include_others = False):
+def sid_selection_totals(results_by_sid, sids, parties_filter = None, include_others = False, top = None):
     '''
     Calculates party totals in station IDs specified.
     
@@ -1498,6 +1602,8 @@ def sid_selection_totals(results_by_sid, sids, parties_filter, include_others = 
         List of party labels. Should be in results_by_sid.
     include_others : bool, default True
         If ``True`` will include a total sum of parties outside of ``parties_filter``.
+    top : int, default None
+        Will return the top parties results (and possibly others)
         
     Returns
     -------
@@ -1509,6 +1615,9 @@ def sid_selection_totals(results_by_sid, sids, parties_filter, include_others = 
     selection = results_by_sid.drop(columns = 'ekatte')[results_by_sid.index.isin(sids)].sum(numeric_only=True)
     
     s = {}
+    if parties_filter is None:
+        parties_filter = selection.index
+        
     for party in parties_filter:
         if party in selection:
             s[party] = selection[party]
@@ -1516,8 +1625,14 @@ def sid_selection_totals(results_by_sid, sids, parties_filter, include_others = 
             s[party] = np.nan
         
     s = pd.Series(s).sort_values(ascending = False)
+    
+    if top is not None:
+        if not isinstance(top, int):
+            raise ValueError('top should be int, not', type(top))
+        s = s[:top]
+    
     if include_others:
-        other = selection[[x for x in selection.index if x not in parties_filter]]
+        other = selection[[x for x in selection.index if x not in s.index]]
         s['други'] = other.sum()
         
     return s
@@ -1783,3 +1898,244 @@ def large_drop_addresses(
         return styler
     
     return table.style.pipe(make_pretty, caption = caption)
+
+def string_to_plots(
+    res1, 
+    res2, 
+    s,
+    parties_filter=[
+        'БСП', 'ГЕРБ-СДС', 'ДБ', 'ДПС', 'ИТН', 'МУТРИ ВЪН!', 'РЕПУБЛИКАНЦИ ЗА БГ'
+    ]
+):    
+    '''
+    
+    Produces a single plot + table for each address in s.
+    
+    Parameters
+    ----------
+    res1 : df
+        Results by SID. Columns are party labels.
+    res2 : df
+        Results by SID. Columns are party labels.
+    s: string
+        Even lines include addresses, odd lines include space-separated SIDs.
+    '''
+    s = s.split('\n')
+    for i in range(len(s))[::2]:
+        name = s[i]
+        sids = s[i+1].split()
+        sid_selection_plot(
+            res1, res2, sids, title = name, 
+            parties_filter=parties_filter,
+        )
+        
+        
+def get_municipal_ekatte(res, mun_codes):
+    
+    '''
+    res: df
+        Results by SID with ekatte column.
+    mun: list of str
+        List of 4-digit municipal codes (xxyy, where xx is МИР, yy is община within said МИР) 
+    '''
+    mun_ekatte_codes = {}
+
+    for m in mun_codes:
+        codes = res.loc[[x for x in res.index if x[:4]==m]]['ekatte'].unique() 
+
+        mun_ekatte_codes[m] = list(codes)
+        
+    return mun_ekatte_codes
+
+
+def get_feudal_municipalities(mun_ekatte_codes, drops_by_ekatte, party, month, min_support = 0.6):
+    '''
+    
+    Parameters
+    ----------
+    mun_ekatte_codes: dict
+        Keys are municipalities (xxyy, xx = region, yy = municipality within reg);
+        Values are EKATTE codes.
+    drops_by_ekatte: df 
+        Results by EKATTE
+    party: str
+        Party label
+    month: str
+        Month label, depends on drops_by_ekatte.
+    min_support: 
+        Municipalities 
+        
+    Returns
+    -------
+    list of municipal codes 
+    '''
+
+    feudal_mun = []
+
+    for m in mun_ekatte_codes:
+        codes = mun_ekatte_codes[m]
+
+        # TO DO: figure out why these throw an error 
+        if 17614 in codes or \
+        49998 in codes or \
+        67074 in codes or \
+        18037 in codes or \
+        49334 in codes:
+            continue 
+
+        totals = drops_by_ekatte.loc[codes].sum()[[f'{party} {month}', f'общо {month}']]
+        if totals[0]/totals[1] > min_support:
+            feudal_mun.append(m)
+            
+    return feudal_mun 
+
+
+def group_by_ekatte(results, include_pct = True, include_totals = True, drop_abroad = True):
+    '''
+    Takes results by SID and returns results by EKATTE.
+    
+    
+    Parameters
+    ----------
+    results: df
+        Results by SID. Last 7 columns are:
+        ['region', 'municipality', 'admin_reg', 'sid', 'region_name', 'place',
+       'ekatte']
+    drop_abroad: bool, default True
+        Drop results abroad.
+        
+    Returns
+    -------
+    df 
+        Results by EKATTE.
+        
+    '''
+    # TODO: drop SID col from meta, add number of SIDs
+    
+    
+    parties = results.columns[:-7]
+    
+    if results['ekatte'].isna().sum() > 0: # happens with scraped data from apr23
+        print ("nan in ekatte column")
+        results = results.copy()
+        results['ekatte'] = results['ekatte'].fillna(-1).astype(int)
+        
+    res = results.groupby('ekatte').sum(numeric_only=True)
+        
+    if include_pct: 
+        pct = res.divide(res.sum(axis = 1), axis = 0)
+        for party in parties:
+            res[f'{party} %'] = pct[party]*100
+            
+    if include_totals: 
+        totals = res[parties].sum(axis = 1)
+        res['Общо'] = totals
+            
+    meta = results[results.columns[-7:]].groupby('ekatte').first()
+    for col in meta:
+        res[col] = meta[col]
+
+    if drop_abroad:
+        bg_ekatte = [x for x in res.index if not (str(x)[:3] =='100' and len(str(x)) == 6)]
+        return res[res.index.isin(bg_ekatte)]
+    
+    return res
+
+def ekatte_to_sid(ekatte, results):
+    '''
+    Returns the SIDs in the selected EKATTE.
+    
+    Parameters
+    ----------
+    ekatte : int
+    results: df
+        Results by SID.
+        
+    Returns
+    -------
+    list of str 
+        List of SIDs in selected EKATTE.
+    '''
+    
+    if (results['ekatte'] == ekatte).sum() > 0:
+        return [sid for sid in results[results['ekatte'] == ekatte].index]
+    else:
+        return []
+    
+def party_history_plot(
+    results_list,
+    party, 
+    ekatte = None,
+    sids = None,
+    labels = None, # should match labels
+    title = '',
+):
+    
+    '''
+    Shows election history over results_list for the selected party and EKATTE/SIDs.
+    
+    Parameters
+    ----------
+    results_list : list of df
+        Election results.
+    party : str
+        Party label.
+    ekatte : int, optional, default None 
+        EKATTE code.
+    sids : list of str
+        List of station IDs.
+    labels : list of str
+        Labels to match results_lsit.
+    title : str, default ''
+        Optional plot title.
+        
+    Returns
+    -------
+    plotly figure
+    '''
+    
+    if sids is not None and ekatte is not None:
+        raise ValueError('either sids or ekatte should be specified, not both')
+    
+    ss = []
+    
+    for res in results_list:
+        if ekatte is not None:
+            sids = ekatte_to_sid(ekatte, res)
+        ss.append(sid_selection_totals(res, sids, [party], include_others = True))     
+        
+#     title = f'{title}. Брой секции: {len(sids)}.'
+#     fig = comparison_barplot(ss, labels = labels, title=title, return_fig = return_fig)
+    
+    history = pd.DataFrame(ss, index = labels)
+
+    fig = px.bar(data_frame = history, barmode = 'group')
+    
+    
+    fig.update_layout(
+        barmode = 'group',
+        title= (f'{title}'),
+        font=dict(
+            size=27,
+        ),
+        plot_bgcolor='rgba(0,0,0,0)',
+        legend=dict(
+            x=0.8,
+            y=.95,
+            title = 'Партия',
+            bgcolor = 'rgba(0,0,0,0)'
+        ),
+    )
+
+
+    fig.update_layout(
+        yaxis_title = 'Брой гласове',
+        xaxis_title = 'Избори',
+        #height = 650,
+        #width = 1200
+    )
+
+    # TO DO: history table
+#     table = sid_selection_multi_table(results_list, labels, sids, ss[0].index)
+   
+    return  fig 
