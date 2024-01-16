@@ -2,12 +2,13 @@ import pandas as pd
 import plotly.graph_objects as go
 import plotly.express as px
 import geojson
-import json 
 import numpy as np 
 
 from IPython.display import display 
 
-data_dir = '.'
+from data_loading import station_addresses
+
+data_dir = '/home/petar/skriptove_za_izobri/standardized_data'
 
 styles = [
     #table properties
@@ -54,165 +55,36 @@ def make_pretty(styler, caption):
     styler.format(na_rep = '-', precision = 2)
     return styler
 
-
-def load_votes_data(month):
+def plot_election_totals(data, top = None, title = ''):
     '''
-    Loads votes data for either april or july.
-    
+
+    Sums data and plots a sorted barchart.
+
     Parameters
     ----------
-    month : {'april', 'july', 'nov21', 'oct22'}
+    data : df 
+        Votes per party and SID.
+    top : int or None
+        If not None will include the top parties only.
+    title : str, default ''
+        Optional plot title.
+    '''
+
+    totals = data.sum().sort_values(ascending = False)
     
-    Returns
-    -------
-    votes : dataframe
-        Indexed by polling station ID. 
-        Columns are party names + suffix indicating the month.
+    if top:
+        totals = totals[totals.index[:top]]
+    
+    fig = px.bar(x = totals.index, y = totals, )
+    
+    fig.update_layout(
+        xaxis_title = 'партия',
+        yaxis_title = 'гласове',
+        title = title,
+    )
+    
+    return fig 
         
-    '''
-    
-    from rename_map import nov21_rename_map, apr23_rename_map
-    
-    if month == 'april':
-        april = pd.read_csv(f'{data_dir}/votes_04.04.2021_padded.csv', index_col = [0], dtype = {'station no': str})
-        april = april[['station no'] + [n for n in april if ('result' in n and 'paper' not in n and 'machine' not in n)]]
-        data_ = april.groupby('station no').sum()
-        data_.rename(columns = {x : x[:-7] for x in data_}, inplace = True)
-    
-    elif month == 'july':
-        july = pd.read_csv(f'{data_dir}/votes_11.07.2021_padded.csv', index_col = [0], dtype = {'station no': str})
-        data_ = july[['station no'] + [n for n in july if 'result' in n]].groupby('station no').sum()
-        data_.rename(columns = {x : x[:-7] for x in data_}, inplace = True)
-    
-    elif month == 'nov21':
-        data = pd.read_csv(f'{data_dir}/votes_14.11.2021_padded.csv', index_col = [0], dtype = {'station no': str})
-        data_ = data[['station no'] + [n for n in data if 'result' in n]].groupby('station no').sum()
-        data_.rename(columns = {x : x[:-7] for x in data_}, inplace = True)
-        data_.rename(columns = nov21_rename_map, inplace = True)
-    
-    elif month == 'oct22':
-        data = pd.read_csv(f'{data_dir}/votes_02.10.2022_padded.csv', index_col = [0], dtype = {'station no': str})
-        data_ = data[['station no'] + [n for n in data if 'result' in n]].groupby('station no').sum()
-        data_.rename(columns = {x : x[:-7] for x in data_}, inplace = True)
-    
-    elif month == 'apr23':
-        data_ = pd.read_csv(f'{data_dir}/votes_02.04.2023_padded.csv', index_col = [0], dtype = {'station no': str})
-        data_ = data_[['station no'] + [n for n in data_ if ('result' in n and 'paper' not in n and 'machine' not in n)]]
-        data_ = data_.groupby('station no').sum()
-        data_.rename(columns = {x : x[:-7] for x in data_}, inplace = True)
-        data_.rename(columns = apr23_rename_map, inplace = True)
-
-    else:
-        raise ValueError('expected july, april, nov21, oct22, or apr23, got', month)
-
-    return data_
-
-def load_station_locations(month):
-    '''
-    Loads polling station location data for either april or july.
-    
-    Parameters
-    ----------
-    month : {'april', 'july', 'oct22'}
-    
-    Returns
-    -------
-    stations : dataframe
-        Indexed by polling station ID. 
-        Columns are place names, EKATTE, etc.
-    '''
-    
-    names = ['station no', 'MIR', 'MIR name','EKATTE', 'place', 'mobile', 'ship', 'machine']
-    usecols = [0, 1, 2, 3, 4]
-    
-    if month == 'april':
-        source_file = f'{data_dir}/sections_04.04.2021.txt'
-    elif month=='july': 
-        source_file = f'{data_dir}/sections_11.07.2021.txt'
-    elif month=='nov21': 
-        source_file = f'{data_dir}/sections_14.11.2021.txt'
-    elif month=='oct22':
-        source_file = f'{data_dir}/sections_02.10.2022_corr.txt' #fixed address of one station in USA
-        names = ['station no', 'MIR', 'MIR name','EKATTE', 'place', 'address', 'mobile', 'ship', 'machine']
-        usecols = [0, 1, 2, 3, 4, 5]
-    elif month=='apr23':
-        source_file = f'{data_dir}/sections_02.04.2023.txt' 
-        names = ['station no', 'MIR', 'MIR name','EKATTE', 'place', 'address', 'mobile', 'ship', 'machine']
-        usecols = [0, 1, 2, 3, 4, 5]
-    else:
-        raise ValueError('expected july, april, nov21, oct22, or apr23, got', month)
-        
-        
-    stations = pd.read_csv(
-        source_file, 
-        usecols = usecols,
-        dtype = {'station no': str},
-        header = None, 
-        names = names,
-        delimiter = ';'
-    ).set_index('station no')
-    return stations
-    
-def add_regional_codes(results, stations):
-    '''
-    Adds region, municipality, and administrative region codes to a results dataframe
-    by splitting the station ID into its constituent parts:
-    region code (2 digits), municipality (2), administrative region (2), station (3)
-    
-    Parameters
-    ----------
-    results : dataframe
-        results.index are station IDs
-        results.columns are party labels
-        data in each column indicates the number of votes in each polling station
-    stations : dataframe 
-        indexed by SID, contains location data (placenames)
-    '''
-   
-    if not results.index.equals(stations.index):
-        raise ValueError ('results and stations index don\'t match')
-        
-    results = results.copy()
-    
-    results['region'] = [sid[:2] for sid in results.index]
-    results['municipality'] = [sid[2:4] for sid in results.index]
-    results['municipality_name'] = [sid_to_mun(sid) if sid[:2] < '32' else 'чужбина' for sid in results.index]
-    results['admin_reg'] = [sid[4:6] for sid in results.index]
-    results['sid'] = [sid[6:] for sid in results.index]
-    results['region_name'] = stations['MIR name']
-    results['place'] = stations['place'].copy()
-    results['ekatte'] = stations['EKATTE'].copy()
-    if 'address' in stations:
-        results['address'] = stations['address'].copy()
-    else:
-        results['address'] = ['-']*len(results.index) 
-    return results
-
-def sid_to_mun(sid):
-
-    with open('xxyy_to_municipality_map.json', 'r') as f:
-        sid_to_mun = json.loads(f.read())
-
-    return sid_to_mun[sid[:4]]
-
-def load_full(month):
-    '''
-    Loads votes data and station locations.
-    
-    Parameters
-    ----------
-    month : {'april', 'july', 'nov21', 'oct22'}
-    
-    Returns
-    -------
-    poll_data : dataframe
-        Indexed by polling location ID.
-    '''
-    votes_data = load_votes_data(month)
-    station_data = load_station_locations(month)
-    return add_regional_codes(votes_data, station_data)
-
-
 def single_party_df(party, april_results, july_results):
     '''
     Returns the results of party per ID + some additional columns:
@@ -305,6 +177,7 @@ def all_parties_drops( april_results, july_results):
     
     data = pd.DataFrame(index = [id for id in ids])
     data['населено място'] = july_results['place']
+
     for party in order:
         data[f'{party} април'] = april_results[party]
         data[f'{party} юли'] = july_results[party]
@@ -319,7 +192,7 @@ def compare_by_sid(
     include_drops = True,
     drop_abroad = False,
     include_municipality = False,
-):
+): #TODO use addresses from results dfs 
     '''
     Returns a dataframe with the number of votes for each party per Station ID
     in both elections + some additional columns:
@@ -361,7 +234,9 @@ def compare_by_sid(
         Columns: location, ekatte, region, address, party 1 votes 1, party 1 votes 2, party 1 drop pct, etc.
     '''
 
-    parties_both = set(results1.columns[:-7]) & set(results2.columns) 
+    last = 10
+
+    parties_both = set(results1.columns[:-last]) & set(results2.columns) 
     ids = set(results1.index) | set(results2.index)
     
     if drop_abroad:
@@ -377,7 +252,7 @@ def compare_by_sid(
     data['екатте'] = results2['ekatte']
     data['регион'] = results2['region_name']
     if include_municipality:
-        data['община'] = [sid[2:4] for sid in data.index]
+        data['община'] = [sid_to_mun(sid) for sid in data.index]
 
     data['адрес'] = addr['address']
     data['адрес'] = [x.replace(',', ';') for x in data['адрес'].fillna('не е наличен')]
@@ -397,7 +272,6 @@ def compare_by_ekatte(
     drop_abroad = True, 
     include_pct = False,
     include_totals = False,
-    include_municipality = False,
 ):
     '''
     Returns a dataframe with the number of votes for each party per EKATTE code 
@@ -432,8 +306,6 @@ def compare_by_ekatte(
         If ``True``, will include party pct. support.
     include_totals : bool, default False
         If ``True``, will include total votes in each election and total activity drop.
-    include_municipality: bool, default False
-        If `True`, will include a column with municipality ID (characters 3-4 of the SIDs in each settlement).
         
     Returns
     -------
@@ -459,8 +331,6 @@ def compare_by_ekatte(
     data.index.name = 'ЕКАТТЕ'
     data['регион'] = regions['region_name']
     data['населено место'] = regions['place']
-    #if include_municipality:
-    #    data['община'] = [sid[2:4] for sid in data.index]
     
     for party in order:
         data[f'{party} {label1}'] = results1[party]
@@ -485,7 +355,7 @@ def compare_by_ekatte(
     
     return data 
 
-def summary_plot(data, n):
+def summary_plot(data, n): #TODO generalize to any two elections
     '''
     Produces an april-july bar chart, votes broken down by party.
     
@@ -1112,90 +982,6 @@ def sid_selection_results(
 
     return reg_sids[order].sort_index()
     
-def station_addresses():
-    '''
-    Polling station addresses from October 2022 (first time they appeared).
-    '''
-    addr = pd.read_csv(
-        './sections_02.10.2022_corr.txt', 
-        sep = ';', 
-        header=None,
-        names = [
-            'sid', 
-            'region',
-            'region_name',
-            'ekatte',
-            'place',
-            'address',
-            'mobile',
-            'ship',
-            'number of machines',
-        ],
-        dtype = {'sid': str}
-    ).set_index('sid')
-    return addr
-
-def get_protocols(month, by_sid = True, extra = True):
-    '''
-    Parameters
-    ----------
-    month : {oct22}
-        The month for which to load data.
-        For now only October 22.
-    by_sid : bool, default True
-        If ``True`` will sum the data by SID.
-    extra : bool, defaul True
-        If ``True`` and ``by_sid`` is also ``True``, will return some extra data (address, station location)
-        
-    Returns
-    -------
-    protocols: df
-        Protocols data.
-        Rows correspond to individual protocols/station IDs.
-    '''
-    
-    if month == 'oct22':
-        protocols = pd.read_csv(
-            '../2022-10ns/np/protocols_02.10.2022.txt', 
-            sep = ';', 
-            usecols = range(19),
-            names = [
-                'form number', 
-                'sid', 
-                'rik', 
-                'page numbers', 
-                'machine number', 
-                'reason flag', 
-                'number of ballots', 
-                'eligible voters', 
-                'added voters', 
-                'signatures', 
-
-                'unused ballots', 
-                'destroyed ballots', 
-                'total cast', # values in this column seem to be totally off, should be the sum of the next two lines; actually the column order seems to be messed up   
-                'paper ballots', 
-                'machine votes',
-                'invalid paper ballots', 
-                'valid votes total', # according to readme: 'valid paper ballots',
-                'valid votes for parties', 
-                'valid votes blank'
-            ],
-            dtype = {'sid': str}
-        )
-    
-    if by_sid:
-        protocols = protocols.groupby('sid').sum(numeric_only = True).drop(columns = ['form number', 'rik', 'reason flag'])
-
-        if extra:
-            addr = station_addresses()
-            protocols['address'] = addr['address']
-            month_data = load_full(month)
-            protocols['place'] = month_data['place']
-            protocols['ekatte'] = month_data['ekatte']
-
-    return protocols
-
 def ekatte_selection_totals(results_by_sid, ekatte_codes, parties_filter):
     '''
     Calculates party totals in regions specified.
@@ -1527,6 +1313,7 @@ def sid_selection_multi_plot(
     
     for res in results_list:
         ss.append(sid_selection_totals(res, sids, parties_filter, include_others = include_others, top = top))
+        print (ss[-1])
         
     title = f'{title}. секции: {len(sids)}.'
     
@@ -1616,9 +1403,10 @@ def sid_selection_totals(results_by_sid, sids, parties_filter = None, include_ot
     
     s = {}
     if parties_filter is None:
-        parties_filter = selection.index
+        parties_filter = [x for x in selection.index if x !='eligible_voters']
         
     for party in parties_filter:
+        print (party)
         if party in selection:
             s[party] = selection[party]
         else:
@@ -1632,7 +1420,7 @@ def sid_selection_totals(results_by_sid, sids, parties_filter = None, include_ot
         s = s[:top]
     
     if include_others:
-        other = selection[[x for x in selection.index if x not in s.index]]
+        other = selection[[x for x in selection.index if (x not in s.index and x!='eligible_voters')]]
         s['други'] = other.sum()
         
     return s
@@ -2139,3 +1927,4 @@ def party_history_plot(
 #     table = sid_selection_multi_table(results_list, labels, sids, ss[0].index)
    
     return  fig 
+
