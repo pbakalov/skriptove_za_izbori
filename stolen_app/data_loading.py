@@ -11,17 +11,13 @@ def load_full(month):
     
     Parameters
     ----------
-    month : {'april', 'july', 'nov21', 'oct22'}
+    month : {'mar17', 'apr21', 'jul21', 'nov21', 'oct22', 'apr23'}
     
     Returns
     -------
     poll_data : dataframe
         Indexed by polling location ID.
     '''
-    if month == 'apr21':
-        month = 'april'
-    if month == 'jul21':
-        month = 'july'
     votes_data = load_votes_data(month)
     station_data = load_station_locations(month)
     eligible_voters = get_eligible_voters(month)
@@ -102,7 +98,7 @@ def load_station_locations(month):
     
     Parameters
     ----------
-    month : {'april', 'july', 'oct22'}
+    month : {'mar17', 'apr21', 'jul21', 'nov21', 'oct22', 'apr23}
     
     Returns
     -------
@@ -117,9 +113,9 @@ def load_station_locations(month):
     if month == 'mar17':
         source_file = f'{data_dir}/sections_26.03.2017.txt'
         names = names[:-1]
-    elif month == 'april':
+    elif month in ['april', 'apr21']:        
         source_file = f'{data_dir}/sections_04.04.2021.txt'
-    elif month=='july': 
+    elif month in ['july', 'jul21']:
         source_file = f'{data_dir}/sections_11.07.2021.txt'
     elif month=='nov21': 
         source_file = f'{data_dir}/sections_14.11.2021.txt'
@@ -149,7 +145,7 @@ def get_eligible_voters(month):
     '''
     Parameters
     ----------
-    month : {apr, jul, nov21, oct22, apr23}
+    month : {'mar17', 'apr21', 'jul21', 'nov21', 'oct22', 'apr23}
         The month for which to load data.
         
     Returns
@@ -163,9 +159,9 @@ def get_eligible_voters(month):
 
     if month == 'mar17':        
         protocols_file = f'{data_dir}/protocols_26.03.2017.txt'
-    elif month == 'april':        
+    elif month in ['april', 'apr21']:        
         protocols_file = f'{data_dir}/protocols_04.04.2021.txt'
-    elif month == 'july':
+    elif month in ['july', 'jul21']:
         protocols_file = f'{data_dir}/protocols_11.07.2021.txt'
     elif month == 'nov21':
         protocols_file = f'{data_dir}/protocols_14.11.2021.txt'
@@ -183,13 +179,13 @@ def get_eligible_voters(month):
             'added voters', #7 'дописани в изборният ден под черта'
             'signatures', #8 'брой гласували според подписите'
         ]
-    elif month == 'april':
+    elif month in ['april', 'apr21']:        
         names = [
             'number of ballots', #5 брой на получените бюлетини 
             'eligible voters', #6 'брой избиратели в избирателният списък при предаването му на СИК, включително вписаните в изборния ден'
             'signatures', #7 'брой гласували според подписите'
         ]
-    elif month == 'july':
+    elif month in ['july', 'jul21']:
         names = [
             'number of ballots', #5
             'eligible voters', #6 'брой избиратели в избирателният списък при предаването му на СИК'
@@ -226,7 +222,7 @@ def get_npn(month):
     '''
     Parameters
     ----------
-    month : {apr, jul, nov21, oct22, apr23}
+    month : {'mar17', 'apr21', 'jul21', 'nov21', 'oct22', 'apr23}
         The month for which to load data.
         
     Returns
