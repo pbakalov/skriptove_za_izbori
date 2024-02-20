@@ -22,7 +22,8 @@ def load_full(month):
     station_data = load_station_locations(month)
     eligible_voters = get_eligible_voters(month)
     npn = get_npn(month)
-    return add_regional_codes(votes_data, station_data, eligible_voters, npn)
+    invalid = get_invalid(month)
+    return add_regional_codes(votes_data, station_data, eligible_voters, npn, invalid)
 
 def load_votes_data(month):
     '''
@@ -234,32 +235,25 @@ def get_npn(month):
 
     if month == 'mar17':        
         protocols_file = f'{data_dir}/protocols_26.03.2017.txt'
+        col = 19
     elif month in ['april', 'apr21']:        
         protocols_file = f'{data_dir}/protocols_04.04.2021.txt'
+        col = 21
     elif month in ['july', 'jul21']:
         protocols_file = f'{data_dir}/protocols_11.07.2021.txt'
+        col = 17
     elif month == 'nov21':
         protocols_file = f'{data_dir}/protocols_14.11.2021.txt'
+        col = 19
     elif month =='oct22':
         protocols_file = f'{data_dir}/protocols_02.10.2022.txt'
+        col = 19
     elif month =='apr23':
         protocols_file = f'{data_dir}/protocols_02.04.2023.txt'    
-    else:
-        raise ValueError('unknown month', month)
-        
-    if month == 'mar17':
-        col = 19
-    elif month in ['april', 'apr21']: # col 21
-        col = 21
-    elif month in ['july', 'jul21']: # col 17
-        col = 17
-    elif month in ['nov21', 'oct22']: # col 19
-        col = 19
-    elif month == 'apr23': #  col 23 or 25; load 25 cols & use map depending on form number 
         col = 25
     else:
         raise ValueError('unknown month', month)
-            
+        
     protocols = pd.read_csv(
         protocols_file,
         sep = ';',
@@ -287,7 +281,7 @@ def get_npn(month):
             
         return npn.groupby('sid').sum()
     
-def add_regional_codes(results, stations, elig_voters, npn):
+def add_regional_codes(results, stations, elig_voters, npn, invalid):
     '''
     Adds region, municipality, and administrative region codes to a results dataframe
     by splitting the station ID into its constituent parts:
@@ -313,6 +307,7 @@ def add_regional_codes(results, stations, elig_voters, npn):
     results = results.copy()
     
     results['npn'] = npn
+    results['invalid'] = invalid
     results['region'] = [sid[:2] for sid in results.index]
     results['municipality'] = [sid[2:4] for sid in results.index]
     results['municipality_name'] = [sid_to_mun(sid) for sid in results.index]
@@ -435,3 +430,51 @@ def get_protocols(month, by_sid = True, extra = True):
             protocols['ekatte'] = month_data['ekatte']
 
     return protocols
+
+def get_invalid(month):
+    '''
+    Parameters
+    ----------
+    month : {mar17, apr12, jul21, nov21, oct22, apr23}
+        The month for which to load data.
+        
+    Returns
+    -------
+    series
+        "Недействителни" votes by SID.
+    '''
+    
+    if month == 'mar17':
+        protocols_file = f'{data_dir}/protocols_26.03.2017.txt'
+        col = 16
+    elif month in ['april', 'apr21']:
+        protocols_file = f'{data_dir}/protocols_04.04.2021.txt'
+        col = 12
+    elif month in ['july', 'jul21']:
+        protocols_file = f'{data_dir}/protocols_11.07.2021.txt'
+        col = 14
+    elif month == 'nov21':
+        protocols_file = f'{data_dir}/protocols_14.11.2021.txt'
+        col = 16
+    elif month =='oct22':
+        protocols_file = f'{data_dir}/protocols_02.10.2022.txt'
+        col = 16
+    elif month =='apr23':
+        protocols_file = f'{data_dir}/protocols_02.04.2023.txt'
+        col = 16
+    else:
+        raise ValueError('unknown month', month)
+
+    protocols = pd.read_csv(
+        protocols_file,
+        sep = ';',
+        usecols = range(col), 
+        names = range(col), 
+        dtype = {1 : str},
+        index_col = [1],
+    )
+    
+    protocols.index.name = 'sid'
+    
+    return protocols[col-1].groupby('sid').sum() # by sid     
+

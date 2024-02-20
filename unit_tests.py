@@ -12,7 +12,7 @@ def test_map_data(): # indirectly tests load_full()
         by_ekatte = dfbg.groupby('ekatte').sum(numeric_only=True)
     #     by_ekatte    
 
-        parties = by_ekatte.columns[:-1]# all parties + npn 
+        parties = by_ekatte.columns[:-2]# all parties + npn 
 
     #     parties = by_ekatte[parties].sum().sort_values(ascending = False).index # order by total votes at national level 
 
@@ -27,4 +27,4 @@ def test_map_data(): # indirectly tests load_full()
 
         ref = pd.read_csv(f'{data_dir}data_{m}_pct.csv', index_col = [0])
 
-        assert_frame_equal(final, ref)
+        assert_frame_equal(final[ref.columns], ref)
