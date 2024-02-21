@@ -1,8 +1,8 @@
 import pandas as pd 
 from pandas.testing import assert_frame_equal
-from data_loading import load_full 
+from skriptove_za_izbori.data_loading import load_full 
 
-data_dir = './unit_tests/reference_data/'
+data_dir = './reference_data/'
 
 def test_map_data(): # indirectly tests load_full()
     for m in ['mar17', 'apr21', 'jul21', 'nov21', 'oct22', 'apr23']:

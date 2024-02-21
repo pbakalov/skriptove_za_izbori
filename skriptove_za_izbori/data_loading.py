@@ -2,8 +2,9 @@ import pandas as pd
 import plotly.graph_objects as go
 import plotly.express as px
 import json 
+import os
 
-data_dir = './data'
+data_dir = os.path.join(os.path.dirname(__file__), '../data')
 
 def load_full(month):
     '''
@@ -41,7 +42,7 @@ def load_votes_data(month):
         
     '''
     
-    from rename_map import (
+    from .rename_map import (
         mar17_rename_map,
         apr21_rename_map,
         jul21_rename_map,
