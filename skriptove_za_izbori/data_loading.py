@@ -6,13 +6,15 @@ import os
 
 data_dir = os.path.join(os.path.dirname(__file__), '../data')
 
+_known_elections = 'may13, oct14, mar17, apr21, jul21, nov21, oct22, or apr23'
+
 def load_full(month):
     '''
     Loads votes data and station locations.
     
     Parameters
     ----------
-    month : {'mar17', 'apr21', 'jul21', 'nov21', 'oct22', 'apr23'}
+    month : {'oct14', 'mar17', 'apr21', 'jul21', 'nov21', 'oct22', 'apr23'}
     
     Returns
     -------
@@ -21,6 +23,7 @@ def load_full(month):
     '''
     votes_data = load_votes_data(month)
     station_data = load_station_locations(month)
+    #TODO use a single function for eligible voters, npn, and invalid (all from protocols.txt)
     eligible_voters = get_eligible_voters(month)
     npn = get_npn(month)
     invalid = get_invalid(month)
@@ -43,6 +46,8 @@ def load_votes_data(month):
     '''
     
     from .rename_map import (
+        may13_rename_map,
+        oct14_rename_map,
         mar17_rename_map,
         apr21_rename_map,
         jul21_rename_map,
@@ -51,7 +56,19 @@ def load_votes_data(month):
         apr23_rename_map,
     )
     
-    if month == 'mar17':
+    if month == 'may13': 
+        data_ = pd.read_csv(f'{data_dir}/pe2013_pe_votes_padded.csv', index_col = [0], dtype = {'sid': str})
+        data_ = data_[['sid'] + [n for n in data_ if ('result' in n)]].groupby('sid').sum()
+        data_.rename(columns = {x : x[:-7] for x in data_}, inplace = True)
+        data_.rename(columns = may13_rename_map, inplace = True)
+    
+    elif month == 'oct14':
+        data_ = pd.read_csv(f'{data_dir}/votes_pe2014_padded.csv', index_col = [0], dtype = {'sid': str})
+        data_ = data_[['sid'] + [n for n in data_ if ('result' in n and 'invalid' not in n)]].groupby('sid').sum()
+        data_.rename(columns = {x : x[:-7] for x in data_}, inplace = True)
+        data_.rename(columns = oct14_rename_map, inplace = True)
+    
+    elif month == 'mar17':
         data_ = pd.read_csv(f'{data_dir}/votes_26.03.2017_padded.csv', index_col = [0], dtype = {'station no': str})
         data_ = data_[['station no'] + [n for n in data_ if ('result' in n and 'invalid' not in n)]].groupby('station no').sum()
         data_.rename(columns = {x : x[:-7] for x in data_}, inplace = True)
@@ -90,7 +107,7 @@ def load_votes_data(month):
         data_.rename(columns = apr23_rename_map, inplace = True)
 
     else:
-        raise ValueError('expected mar17, jul21, apr21, nov21, oct22, or apr23, got', month)
+        raise ValueError(f'Expected {_known_elections}, got', month)
 
     return data_
 
@@ -112,7 +129,15 @@ def load_station_locations(month):
     names = ['station no', 'MIR', 'MIR name','EKATTE', 'place', 'mobile', 'ship', 'machine']
     usecols = [0, 1, 2, 3, 4]
     
-    if month == 'mar17':
+    if month == 'may13':
+        source_file = f'{data_dir}/pe2013_pe_sections.txt'
+        names = ['station type flag', 'station no', 'MIR name', 'municipality', 'place', 'EKATTE']
+        usecols = [1,2,4,5]
+    elif month == 'oct14':
+        source_file = f'{data_dir}/sections_pe2014.txt'
+        names = ['station no', 'place', 'EKATTE', 'mobile', 'ship', 'machine']
+        usecols = [0,1,2]
+    elif month == 'mar17':
         source_file = f'{data_dir}/sections_26.03.2017.txt'
         names = names[:-1]
     elif month in ['april', 'apr21']:        
@@ -130,7 +155,7 @@ def load_station_locations(month):
         names = ['station no', 'MIR', 'MIR name','EKATTE', 'place', 'address', 'mobile', 'ship', 'machine']
         usecols = [0, 1, 2, 3, 4, 5]
     else:
-        raise ValueError('expected july, april, nov21, oct22, or apr23, got', month)
+        raise ValueError(f'Expected {_known_elections}, got', month)
         
         
     stations = pd.read_csv(
@@ -147,7 +172,7 @@ def get_eligible_voters(month):
     '''
     Parameters
     ----------
-    month : {'mar17', 'apr21', 'jul21', 'nov21', 'oct22', 'apr23}
+    month : {'oct14', 'mar17', 'apr21', 'jul21', 'nov21', 'oct22', 'apr23}
         The month for which to load data.
         
     Returns
@@ -159,7 +184,11 @@ def get_eligible_voters(month):
     # NOTE keeping column names to make it easier to reuse this later for other functiions.
     # otherwise could just use column numbers here
 
-    if month == 'mar17':        
+    if month == 'may13':        
+        protocols_file = f'{data_dir}/pe2013_pe_protocols.txt'
+    elif month == 'oct14':        
+        protocols_file = f'{data_dir}/protocols_pe2014.txt'
+    elif month == 'mar17':        
         protocols_file = f'{data_dir}/protocols_26.03.2017.txt'
     elif month in ['april', 'apr21']:        
         protocols_file = f'{data_dir}/protocols_04.04.2021.txt'
@@ -172,9 +201,40 @@ def get_eligible_voters(month):
     elif month =='apr23':
         protocols_file = f'{data_dir}/protocols_02.04.2023.txt'    
     else:
-        raise ValueError('unknown month', month)
+        raise ValueError(f'Expected {_known_elections}, got', month)
+
+    names_all = ['form number', 'sid', 'rik', 'page numbers']
+    index_col = 1
         
-    if month == 'mar17':
+    if month == 'may13':
+        index_col = 1
+        col0 = 0 # station type flag
+        col1 = 4 # elig voters (at home) 
+        col2 = 2 # elig voters (abroad)
+        protocols = pd.read_csv(
+            protocols_file,
+            sep = ';',
+            header = None,
+            #usecols = range(cols),
+            #names = range(cols),
+            dtype = {1 : str},
+            index_col = [1],
+        )
+        
+        data = protocols[col1].where(protocols[col0]!='Д', other=protocols[col2])
+        data.index.name = 'sid'
+        return data
+
+    if month == 'oct14':
+        names_all = ['sid', 'registered_candidate_lists']
+        names = [
+            'number of ballots', #3
+            'eligible voters', #4 'брой избиратели в избирателният списък при предаването му на СИК'
+            'added voters', #5 'дописани в изборният ден под черта'
+            'signatures', #6 'брой гласували според подписите'
+        ]
+        index_col = 0
+    elif month == 'mar17':
         names = [
             'number of ballots', #5
             'eligible voters', #6 'брой избиратели в избирателният списък при предаването му на СИК'
@@ -204,9 +264,8 @@ def get_eligible_voters(month):
             'signatures', #10 'брой гласували според подписите'
         ]
     else:
-        raise ValueError('unknown month', month)
+        raise ValueError(f'Expected {_known_elections}, got', month)
         
-    names_all = ['form number', 'sid', 'rik', 'page numbers']
     names = names_all + names
     
     protocols = pd.read_csv(
@@ -215,7 +274,7 @@ def get_eligible_voters(month):
         usecols = range(len(names)), 
         names = names, 
         dtype = {'sid' : str},
-        index_col = [1],
+        index_col = [index_col],
     )
     
     return protocols['eligible voters'].groupby('sid').sum() # by sid 
@@ -232,9 +291,18 @@ def get_npn(month):
     series
         "Не подкрепям никого" votes by SID.
     '''
-    
+   
+    index_col = 1 
 
-    if month == 'mar17':        
+    if month == 'may13':        
+        protocols_file = f'{data_dir}/pe2013_pe_protocols.txt'
+        col = 19
+        index_col = 1
+    elif month == 'oct14':        
+        protocols_file = f'{data_dir}/protocols_pe2014.txt'
+        col = 19
+        index_col = 0
+    elif month == 'mar17':        
         protocols_file = f'{data_dir}/protocols_26.03.2017.txt'
         col = 19
     elif month in ['april', 'apr21']:        
@@ -253,22 +321,22 @@ def get_npn(month):
         protocols_file = f'{data_dir}/protocols_02.04.2023.txt'    
         col = 25
     else:
-        raise ValueError('unknown month', month)
+        raise ValueError(f'Expected {_known_elections}, got', month)
         
     protocols = pd.read_csv(
         protocols_file,
         sep = ';',
         usecols = range(col), 
         names = range(col), 
-        dtype = {1 : str},
-        index_col = [1],
+        dtype = {index_col : str},
+        index_col = [index_col],
     )
     
     protocols.index.name = 'sid'
     
-    if month !='apr23':
-        return protocols[col-1].groupby('sid').sum() # by sid 
-    else:
+    if month in ['may13', 'oct14']:
+        return 0*protocols[col-1].groupby('sid').sum() # or np.nan? 
+    elif month =='apr23':
         form_col_map = { # columns where total NPN votes are (values), depending on form number (keys)
             24 : 23,
             26 : 25,
@@ -281,6 +349,8 @@ def get_npn(month):
             npn[protocols[0]==fn] = protocols[protocols[0]==fn][form_col_map[fn]-1]
             
         return npn.groupby('sid').sum()
+    else:
+        return protocols[col-1].groupby('sid').sum() # by sid 
     
 def add_regional_codes(results, stations, elig_voters, npn, invalid):
     '''
@@ -314,7 +384,10 @@ def add_regional_codes(results, stations, elig_voters, npn, invalid):
     results['municipality_name'] = [sid_to_mun(sid) for sid in results.index]
     results['admin_reg'] = [sid[4:6] for sid in results.index]
     results['sid'] = [sid[6:] for sid in results.index]
-    results['region_name'] = stations['MIR name']
+    if 'MIR name' in stations:
+        results['region_name'] = stations['MIR name']
+    else: # oct14 patch
+        results['region_name'] = ['-']*len(results)
     results['place'] = stations['place'].copy()
     results['ekatte'] = stations['EKATTE'].copy()
     if 'address' in stations:
@@ -444,8 +517,30 @@ def get_invalid(month):
     series
         "Недействителни" votes by SID.
     '''
-    
-    if month == 'mar17':
+
+    index_col = 1
+
+    if month == 'may13':
+        protocols_file = f'{data_dir}/pe2013_pe_protocols.txt'
+        col0 = 0 # station type flag
+        col1 = 32 # domestic
+        col2 = 14  # abroad 
+        
+        protocols = pd.read_csv(
+            protocols_file,
+            sep = ';',
+            header = None,
+            dtype = {1 : str},
+            index_col = [1],
+        )
+        data = protocols[col1].where(protocols[col0]!='Д', other=protocols[col2])
+        data.index.name = 'sid'
+        return data
+    if month == 'oct14':        
+        protocols_file = f'{data_dir}/protocols_pe2014.txt'
+        col = 17
+        index_col = 0
+    elif month == 'mar17':        
         protocols_file = f'{data_dir}/protocols_26.03.2017.txt'
         col = 16
     elif month in ['april', 'apr21']:
@@ -464,15 +559,15 @@ def get_invalid(month):
         protocols_file = f'{data_dir}/protocols_02.04.2023.txt'
         col = 16
     else:
-        raise ValueError('unknown month', month)
+        raise ValueError(f'Expected {_known_elections}, got', month)
 
     protocols = pd.read_csv(
         protocols_file,
         sep = ';',
         usecols = range(col), 
         names = range(col), 
-        dtype = {1 : str},
-        index_col = [1],
+        dtype = {index_col : str},
+        index_col = [index_col],
     )
     
     protocols.index.name = 'sid'

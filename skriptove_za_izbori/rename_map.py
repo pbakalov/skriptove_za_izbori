@@ -1,5 +1,8 @@
 # see 0_party_names.ipynb for more details
 
+may13_rename_map = {}
+oct14_rename_map = {}
+
 mar17_rename_map = {
     'ПП ДРОМ': 'ПП ДРОМ',
     'ПП Движение за радикална промяна Българската пролет': 'БЪЛГАРСКА ПРОЛЕТ',
