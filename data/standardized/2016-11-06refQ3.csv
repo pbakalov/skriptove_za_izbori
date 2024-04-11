@@ -1,4 +1,4 @@
-sid,yes3,no3,ambiguous3,invalid,region,municipality,municipality_name,admin_reg,station,region_name,place,ekatte,address,eligible_voters
+sid,да,не,нееднозначни,invalid,region,municipality,municipality_name,admin_reg,station,region_name,place,ekatte,address,eligible_voters
 010100001,291,48,30,12,01,01,Банско,00,001,01. БЛАГОЕВГРАД,гр.Банско,2676,-,596
 010100002,302,42,22,0,01,01,Банско,00,002,01. БЛАГОЕВГРАД,гр.Банско,2676,-,595
 010100003,282,48,16,8,01,01,Банско,00,003,01. БЛАГОЕВГРАД,гр.Банско,2676,-,538
