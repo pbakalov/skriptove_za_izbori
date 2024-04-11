@@ -383,7 +383,7 @@ def add_regional_codes(results, stations, elig_voters, npn, invalid):
     results['municipality'] = [sid[2:4] for sid in results.index]
     results['municipality_name'] = [sid_to_mun(sid) for sid in results.index]
     results['admin_reg'] = [sid[4:6] for sid in results.index]
-    results['sid'] = [sid[6:] for sid in results.index]
+    results['station'] = [sid[6:] for sid in results.index]
     if 'MIR name' in stations:
         results['region_name'] = stations['MIR name']
     else: # oct14 patch
