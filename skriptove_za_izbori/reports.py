@@ -6,9 +6,20 @@ import numpy as np
 
 from IPython.display import display 
 
-from data_loading import station_addresses
+from .data_loading import station_addresses
 
-data_dir = '/home/petar/skriptove_za_izobri/standardized_data'
+nuisance_cols = [
+    'place',
+    'region',
+    'municipality',
+    'municipality_name',
+    'address',
+    'eligible_voters',
+    'admin_reg',
+    'station',
+    'ekatte',
+    'region_name'
+]
 
 styles = [
     #table properties
@@ -190,9 +201,9 @@ def compare_by_sid(
     label1 = 'април', 
     label2 = 'юли',
     include_drops = True,
-    drop_abroad = False,
-    include_municipality = False,
-): #TODO use addresses from results dfs 
+    drop_abroad = True,
+    include_totals =True,
+):
     '''
     Returns a dataframe with the number of votes for each party per Station ID
     in both elections + some additional columns:
@@ -224,8 +235,6 @@ def compare_by_sid(
         If ``True`` will include the relative drop of support for each party 
     drop_abroad : bool, default False
         If ``True`` will drop station IDs outside of the country (starting with '32')
-    include_municipality: bool, default False
-        If `True`, will include a column with municipality ID (characters 3-4 of the SID, SID[2:4])
         
     Returns
     -------
@@ -236,32 +245,42 @@ def compare_by_sid(
 
     last = 10
 
-    parties_both = set(results1.columns[:-last]) & set(results2.columns) 
+    parties1 = results1.columns[:-last]
+    parties2 = results2.columns[:-last]
+    parties_both = set(parties1) & set(parties2)
     ids = set(results1.index) | set(results2.index)
     
     if drop_abroad:
         ids = [x for x in ids if x[:2]!='32']
     
-    addr = station_addresses()
+    addr1 = results1['address']
+    addr2 = results2['address']
    
     # order descending by totals in results1
     order = results1[list(parties_both)].sum().sort_values(ascending = False).index
-    
+   
+    # TODO this is not a proper merge; there will be NAs
     data = pd.DataFrame(index = [id for id in ids])
+    data['регион'] = results2['region_name']
+    data['община'] = results2['municipality_name']
     data['населено място'] = results2['place']
     data['екатте'] = results2['ekatte']
-    data['регион'] = results2['region_name']
-    if include_municipality:
-        data['община'] = [sid_to_mun(sid) for sid in data.index]
 
-    data['адрес'] = addr['address']
-    data['адрес'] = [x.replace(',', ';') for x in data['адрес'].fillna('не е наличен')]
+    data[f'адрес {label1}'] = results1['address']
+    data[f'адрес {label2}'] = results2['address']
+
+    #data['адрес'] = [x.replace(',', ';') for x in data['адрес'].fillna('не е наличен')]
     
     for party in order:
         data[f'{party} {label1}'] = results1[party]
         data[f'{party} {label2}'] = results2[party]
         if include_drops:
-            data[f'спад {party}'] = (data[f'{party} {label1}'] - data[f'{party} {label2}'])/data[f'{party} {label1}']
+            data[f'{party} спад'] = (data[f'{party} {label1}'] - data[f'{party} {label2}'])/data[f'{party} {label1}']
+
+    if include_totals:
+        data[f'общо {label1}'] = results1[parties1].sum(axis = 1)
+        data[f'общо {label2}'] = results2[parties2].sum(axis = 1)
+        data['общо спад'] = (data[f'общо {label1}'] - data[f'общо {label2}'])/data[f'общо {label1}']
     return data 
 
 def compare_by_ekatte(
@@ -314,8 +333,17 @@ def compare_by_ekatte(
         Columns: region, location, party 1 votes 1, party 1 votes 2, party 1 drop pct, etc.
     '''
 
-    parties_both = set(results1.columns[:-7]) & set(results2.columns) 
-    regions = results1.groupby('ekatte').first()[['region_name','place']]
+    parties1 = results1.columns[:-10]
+    parties2 = results2.columns[:-10]
+    parties_both = set(parties1) & set(parties2)
+    print (parties_both) 
+
+    if drop_abroad:
+        results1 = results1[results1.index<='320000000'] 
+        results2 = results2[results2.index<='320000000'] 
+
+
+    regions = results1.groupby('ekatte').first()[['region_name','municipality_name', 'place']]
     results1 = results1.groupby('ekatte').sum(numeric_only = True)
     results2 = results2.groupby('ekatte').sum(numeric_only = True)
     ids = set(results1.index) | set(results2.index)
@@ -330,12 +358,13 @@ def compare_by_ekatte(
     data = pd.DataFrame(index = [x for x in ids])
     data.index.name = 'ЕКАТТЕ'
     data['регион'] = regions['region_name']
+    data['община'] = regions['municipality_name']
     data['населено место'] = regions['place']
     
     for party in order:
         data[f'{party} {label1}'] = results1[party]
         data[f'{party} {label2}'] = results2[party]
-        data[f'спад {party}'] = (data[f'{party} {label1}'] - data[f'{party} {label2}'])/data[f'{party} {label1}']
+        data[f'{party} спад'] = (data[f'{party} {label1}'] - data[f'{party} {label2}'])/data[f'{party} {label1}']
         if include_pct:
             data[f'{party} {label1} %'] = pct1[party]
             data[f'{party} {label2} %'] = pct2[party]
@@ -343,15 +372,12 @@ def compare_by_ekatte(
     # TODO: include others
     
     if include_totals:
-        data[f'общо {label1}'] = results1.sum(axis = 1)
-        data[f'общо {label2}'] = results2.sum(axis = 1)
+        #print (results1.columns)
+        #print (results2.columns)
+        data[f'общо {label1}'] = results1[parties1].sum(axis = 1)
+        data[f'общо {label2}'] = results2[parties2].sum(axis = 1)
         data['общо спад'] = (data[f'общо {label1}'] - data[f'общо {label2}'])/data[f'общо {label1}']
         
-    if drop_abroad:
-        bg_ekatte1 = [x for x in results1.index if not (str(x)[:3] =='100' and len(str(x)) == 6)]
-        bg_ekatte2 = [x for x in results2.index if not (str(x)[:3] =='100' and len(str(x)) == 6)]
-        both_bg = list(set(bg_ekatte2) & set(bg_ekatte1))
-        return data[data.index.isin(both_bg)]
     
     return data 
 
@@ -462,7 +488,6 @@ def single_ekatte_results(
     ekatte_df : dataframe
 
     '''
-    nuisance_cols = ['place', 'region', 'municipality', 'admin_reg', 'sid', 'ekatte', 'region_name']
 
     # all station IDs in specified EKATTE in either april or july 
     index = list(set(aa_by_sid.loc[(aa_by_sid['ekatte'] == ekatte)].index) | set(jj_by_sid.loc[(jj_by_sid['ekatte'] == ekatte)].index))
@@ -616,7 +641,7 @@ def sid_to_ekatte(results, station_id):
     ekatte : int
         The EKATTE code of the specified station ID
     '''
-    return results.loc[station_id]['ekatte']
+    return int(results.loc[station_id]['ekatte'])
 
 def ekatte_map(
     data, 
@@ -847,8 +872,8 @@ def sid_selection_plot(
 
     fig = go.Figure()
     
-    aa = april.drop(columns=['ekatte'])[april.index.isin(sids)].sum(numeric_only=True)
-    jj = july.drop(columns=['ekatte'])[july.index.isin(sids)].sum(numeric_only=True)
+    aa = april.drop(columns=nuisance_cols)[april.index.isin(sids)].sum(numeric_only=True)
+    jj = july.drop(columns=nuisance_cols)[july.index.isin(sids)].sum(numeric_only=True)
     print ('activity drop:',(aa.sum() - jj.sum())/aa.sum()*100)
 
     s = aa[parties_filter].copy().sort_values(ascending=False)
@@ -947,7 +972,6 @@ def sid_selection_results(
     ekatte_df : dataframe
 
     '''
-    nuisance_cols = ['place', 'region', 'municipality', 'admin_reg', 'sid', 'ekatte', 'region_name']
 
     index = sids
     
@@ -1342,7 +1366,6 @@ def sid_selection_multi_table(results, labels, sids, parties_mvp):
     -------
     df 
     '''
-    nuisance_cols = ['place', 'region', 'municipality', 'admin_reg', 'sid', 'ekatte', 'region_name']
 
     index = sids
     
@@ -1928,3 +1951,326 @@ def party_history_plot(
    
     return  fig 
 
+def expand_ekatte(ekatte, places_df, include_ekatte = True): 
+    '''
+    Gets the region, municipality, and place name associated with
+    ``ekatte``.
+    
+    Parameters
+    ----------
+    ekatte : int 
+    places_df : df
+        A dataframe with admin data. Columns:
+        * област
+        * община
+        * населено место
+        * ekatte
+
+    Returns
+    -------
+    title : str
+        A string containing region, municipality, place name and ekatte.
+    '''
+    if isinstance(ekatte, (int,float)):
+        row = places_df[places_df['ekatte'] == ekatte]
+        place = row["населено место"].values[0]
+        mun = row["община"].values[0]
+        reg = row["област"].values[0]
+        if include_ekatte:
+            title = f'{place}, общ. {mun}, обл. {reg} ({ekatte})'
+        else:
+            title = f'{place}, общ. {mun}, обл. {reg}'
+    else:
+        row = places_df[places_df['ekatte'].isin(ekatte)]
+        title = f'избрани {len(set(ekatte))} населени места'
+        
+    return title
+
+def ts_data(results, ekatte=None, sids = [], selectedParties=['ГЕРБ-СДС', 'ДПС', 'ГЕРБ']): 
+    '''
+    Creates a time-series df with basic election metrics for the selected ``ekatte`` for all
+    elections in ``results``.
+
+    Default columns:
+    * total
+    * invalid
+    * eligible voters
+    * n_stations
+
+    Parameters
+    ----------
+    results : dict of df
+        Each df in ``results`` contains election data. Last 10 columns are meta, the rest of
+        the columns are parties (including npn and invalid).
+    ekatte : int 
+    sids : list of string
+        Selected SIDs.
+    selectedParties : list, optional, default []
+        A list of party names to add in addition to the default columns.
+
+    Returns
+    -------
+    df
+        Indexed by the keys of ``results``.
+    '''
+    ts_data = {}
+
+    for election in results:
+        res = results[election].copy()
+        res = add_total(res)
+
+        if ekatte is not None:
+            if isinstance(ekatte, (int,float)):
+                filtered = res[res['ekatte'] == ekatte]
+            else:
+                filtered = res[res['ekatte'].isin(ekatte)].copy()
+                filtered['place'] = '-'
+                filtered['region_name'] = '-'
+        elif len(sids)>0:
+            #print ('filtering by sid', sids) 
+            filtered = res[res.index.isin(sids)]
+        else:
+            raise ValueError('either ekatte or sids should be specified')
+        ts_data[election] = {}
+        ts_data[election]['total'] = filtered['total'].sum()
+        ts_data[election]['eligible_voters'] = filtered['eligible_voters'].sum()
+        ts_data[election]['invalid'] = filtered['invalid'].sum()
+        ts_data[election]['n_stations'] = len(filtered)
+        ts_data[election]['place'] = filtered['place'].to_list()[0] if len(filtered) else ''
+        ts_data[election]['region_name'] = filtered['region_name'].to_list()[0] if len(filtered) else ''
+        for party in selectedParties:
+            if party in filtered:
+                ts_data[election][party] = filtered[party].sum()
+            else:
+                ts_data[election][party] = 0
+
+    ts_data = pd.DataFrame.from_dict(ts_data, orient = 'index')
+
+    return ts_data
+
+def add_total(result):
+    '''
+    Adds up all parties' results per row in a 'total' column.
+    '''
+    parties = result.columns[:-10]
+    result = result.copy() 
+    result['total'] = result[parties].sum(axis=1)
+    
+    return result 
+
+def ts_plot(res, places_df, ekatte, selectedParties=['ГЕРБ-СДС', 'ДПС', 'ГЕРБ']):
+    '''
+    Plots basic election metrics over time for the selected ekatte.
+
+    Parameters
+    ----------
+    res : dict of df
+        Each df in ``results`` contains election data. Last 10 columns are meta, the rest of
+        the columns are parties (including npn and invalid).
+    places_df : df
+        Dataframe with administrative data (region, municipality, place name, ekatte).
+    ekatte : int 
+    selectedParties : list, optional, default []
+        A list of party names to add to the default columns.
+
+    Returns
+    
+    '''
+
+    df_ts = ts_data(res, ekatte, selectedParties)
+
+    fig = make_subplots(
+        rows=3, cols=1,
+        shared_xaxes=True,
+    )
+    
+    fig.add_trace(
+        go.Scatter(
+            x = df_ts.index,
+            y = df_ts['total'],
+            name = 'Общо гласували',
+        ),
+        row = 1, col = 1,
+    )
+
+    fig.add_trace(
+        go.Scatter(
+            x = df_ts.index,
+            y = df_ts['invalid'],
+            name = 'Невалидни',
+        ),
+        row = 1, col = 1,
+    )
+
+    fig.add_trace(
+        go.Scatter(
+            x = df_ts.index,
+            y = df_ts[selectedParties].sum(axis=1),
+            name = '+'.join(selectedParties),
+        ),
+        row = 1, col = 1,
+    )
+
+    fig.add_trace(
+        go.Scatter(
+            x = df_ts.index,
+            y = df_ts['eligible_voters'],
+            name = 'Избиратели по списък',
+        ),
+        row = 2, col = 1,
+    )
+
+    fig.add_trace(
+        go.Scatter(
+            x = df_ts.index,
+            y = df_ts['n_stations'],
+            name = 'Брой секции',
+        ),
+        row = 3, col = 1,
+    )
+
+    fig.update_yaxes(title_text='Гласували', range=[0, max(df_ts['total'])*1.1],  row=1, col=1)
+    fig.update_yaxes(title_text='Избиратели по списък', range=[0, max(df_ts['eligible_voters'])*1.1], row=2, col=1)
+    fig.update_yaxes(title_text='Брой секции', range=[0, max(df_ts['n_stations'])*1.1], row=3, col=1)
+    
+    fig.update_layout(
+        title = expand_ekatte(ekatte, places_df),
+        height = 900,
+    )
+
+    return fig    
+
+def ts_snapshot(
+    res, 
+    places_df, 
+    ekatte=None,
+    sids = [], 
+    selectedParties=['ГЕРБ-СДС', 'ДПС', 'ГЕРБ'],
+    sum_selected=False,
+    title = None,
+    include_eligible = False,
+    include_invalid = False,
+    include_total = False,
+):
+    '''
+    Plots basic election metrics over time for the selected ekatte.
+    All in one plot.
+
+    Parameters
+    ----------
+    res : dict of df
+        Each df in ``results`` contains election data. Last 10 columns are meta, the rest of
+        the columns are parties (including npn and invalid).
+    places_df : df
+        Dataframe with administrative data (region, municipality, place name, ekatte).
+    ekatte : int 
+    sids: list of str
+    selectedParties : list, optional, default []
+        A list of party names to add to the default columns.
+
+    Returns
+    
+    '''
+
+    df_ts = ts_data(res, ekatte, sids, selectedParties)
+
+    fig = go.Figure()
+    
+    used_cols = [p for p in selectedParties]
+    
+    if include_total:
+        fig.add_trace(
+            go.Scatter(
+                x = df_ts.index,
+                y = df_ts['total'],
+                name = 'Общо гласували',
+                mode = 'lines+markers+text',
+                line = dict(width = 5),
+                marker = dict(size = 15), 
+                text = df_ts['total'],
+                textposition = 'top center',
+            )
+        )
+        used_cols.append('total')
+
+    if include_invalid:
+        fig.add_trace(
+            go.Scatter(
+                x = df_ts.index,
+                y = df_ts['invalid'],
+                name = 'Невалидни',
+                mode = 'lines+markers+text',
+                line = dict(width = 5),
+                marker = dict(size = 15), 
+                text = df_ts['invalid'],
+                textposition = 'top center',
+            )
+        )
+        used_cols.append('invalid')
+
+    if include_eligible:
+        fig.add_trace(
+            go.Scatter(
+                x = df_ts.index,
+                y = df_ts['eligible_voters'],
+                name = 'Избиратели по списък',
+                mode = 'lines+markers+text',
+                line = dict(width = 5),
+                marker = dict(size = 15), 
+                text = df_ts['eligible_voters'],
+                textposition = 'top center',
+            )
+        )
+        used_cols.append('eligible_voters')
+    
+    if not sum_selected:
+        for p in selectedParties:
+            fig.add_trace(
+                go.Bar(
+                    x = df_ts.index,
+                    y = df_ts[p],
+                    name = p,
+                    text = df_ts[p],
+                )
+            )
+    else:
+        fig.add_trace(
+            go.Scatter(
+                x = df_ts.index,
+                y = df_ts[selectedParties].sum(axis=1),
+                mode = 'lines+markers+text',
+                name = '+'.join(selectedParties),
+                line = dict(width = 5),
+                marker = dict(size = 15),
+                text = df_ts[selectedParties].sum(axis=1),
+                textposition = 'top center',
+            )
+        )
+        
+    # TODO possibly include n_stations 
+    fig.update_yaxes(title_text='Гласували', range=[
+        0, 
+        max(
+            df_ts[used_cols].max().max()*1.1,
+            df_ts[selectedParties].sum(axis=1).max()*1.1
+        )
+    ])
+    
+    # TODO add SIDs as annotation 
+    if title is None:
+        try:
+            title = expand_ekatte(ekatte, places_df) 
+        except:
+            ekatte = sid_to_ekatte(res[list(res.keys())[-1]], sids[0])
+            title = expand_ekatte(ekatte, places_df) + f'. избрани {len(sids)} секции'
+        
+    fig.update_layout(
+        title = title, # expand_ekatte(ekatte, places_df),
+        height = 900,
+        width = 1400,
+        font = dict(size = 25),
+        showlegend = True,
+        barmode = 'stack',
+    )
+
+    return fig    

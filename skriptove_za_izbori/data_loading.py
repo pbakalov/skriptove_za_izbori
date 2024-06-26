@@ -420,7 +420,6 @@ def sid_to_mun(sid):
 
     return sid_to_mun[sid[:4]] if sid[:2] < '32' else 'чужбина'
 
-
 def station_addresses():
     '''
     Polling station addresses from October 2022 (first time they appeared).
@@ -573,4 +572,20 @@ def get_invalid(month):
     protocols.index.name = 'sid'
     
     return protocols[col-1].groupby('sid').sum() # by sid     
+
+def place_data():
+    '''
+    Gets region, municipality, place name, ekatte data according to NSI.
+
+    Returns
+    -------
+    df
+        A dataframe with admin data. Columns:
+        * област
+        * община
+        * населено место
+        * ekatte
+    '''
+    data = pd.read_csv(f'{data_dir}/place_data.csv')
+    return data 
 
