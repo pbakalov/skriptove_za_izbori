@@ -2274,3 +2274,36 @@ def ts_snapshot(
     )
 
     return fig    
+
+
+def group_by_municipality(results, include_totals = True, include_elig = False):
+    '''
+    Takes results by SID and returns results by municpality.
+
+    Parameters
+    ----------
+    results : df
+        Standardized election data by sid.
+    
+    Returns
+    -------
+    dataframe 
+        Election results by municipality for all parties. Includes 'total' column (total number of votes in each
+        municipality). Bulgaria only (votes abroad are ignored).
+    '''
+    results = results[results.index < '320000000']
+    parties = results.columns[:-10]
+    keep = parties.to_list()
+
+    if include_elig:
+        keep = keep + ['eligible_voters']
+
+    results.loc[(results['region'] == 3) & (results['municipality_name']=='Бяла'),'municipality_name'] = 'Бяла (Варна)'
+    results.loc[(results['region'] == 19) & (results['municipality_name']=='Бяла'),'municipality_name'] = 'Бяла (Русе)'
+
+    mun_res = results.groupby('municipality_name').sum()[keep]
+
+    if include_totals:
+        mun_res['total'] = mun_res[parties].sum(axis=1) 
+
+    return mun_res 
