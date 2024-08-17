@@ -1,6 +1,7 @@
 import pandas as pd 
 import plotly.graph_objects as go
 import plotly.express as px
+from plotly.subplots import make_subplots
 import geojson
 import numpy as np 
 
@@ -248,6 +249,8 @@ def compare_by_sid(
     parties1 = results1.columns[:-last]
     parties2 = results2.columns[:-last]
     parties_both = set(parties1) & set(parties2)
+    others1 = list(set(parties1) - set(parties_both))
+    others2 = list(set(parties2) - set(parties_both))
     ids = set(results1.index) | set(results2.index)
     
     if drop_abroad:
@@ -263,8 +266,10 @@ def compare_by_sid(
     data = pd.DataFrame(index = [id for id in ids])
     data['регион'] = results2['region_name']
     data['община'] = results2['municipality_name']
-    data['населено място'] = results2['place']
-    data['екатте'] = results2['ekatte']
+    data[f'населено место {label1}'] = results1['place']
+    data[f'населено место {label2}'] = results2['place']
+    data[f'екатте {label1}'] = results1['ekatte']
+    data[f'екатте {label2}'] = results2['ekatte']
 
     data[f'адрес {label1}'] = results1['address']
     data[f'адрес {label2}'] = results2['address']
@@ -277,10 +282,18 @@ def compare_by_sid(
         if include_drops:
             data[f'{party} спад'] = (data[f'{party} {label1}'] - data[f'{party} {label2}'])/data[f'{party} {label1}']
 
+    data[f'други {label1}'] =results1[others1].sum(axis=1)
+    data[f'други {label2}'] =results2[others2].sum(axis=1)
+    if include_drops:
+        data['други спад'] = (data[f'други {label1}'] - data[f'други {label2}'])/data[f'други {label1}']
+
     if include_totals:
         data[f'общо {label1}'] = results1[parties1].sum(axis = 1)
         data[f'общо {label2}'] = results2[parties2].sum(axis = 1)
         data['общо спад'] = (data[f'общо {label1}'] - data[f'общо {label2}'])/data[f'общо {label1}']
+
+    #TODO if include_total_row:
+
     return data 
 
 def compare_by_ekatte(
@@ -344,6 +357,8 @@ def compare_by_ekatte(
 
 
     regions = results1.groupby('ekatte').first()[['region_name','municipality_name', 'place']]
+    count1 = results1.groupby('ekatte').count()
+    count2 = results2.groupby('ekatte').count()
     results1 = results1.groupby('ekatte').sum(numeric_only = True)
     results2 = results2.groupby('ekatte').sum(numeric_only = True)
     ids = set(results1.index) | set(results2.index)
@@ -360,6 +375,8 @@ def compare_by_ekatte(
     data['регион'] = regions['region_name']
     data['община'] = regions['municipality_name']
     data['населено место'] = regions['place']
+    data['n_sids1'] = count1['region']
+    data['n_sids2'] = count2['region']
     
     for party in order:
         data[f'{party} {label1}'] = results1[party]
@@ -2276,9 +2293,13 @@ def ts_snapshot(
     return fig    
 
 
-def group_by_municipality(results, include_totals = True, include_elig = False):
+def group_by_municipality(
+    results, 
+    include_totals = True,
+    include_elig = False
+):
     '''
-    Takes results by SID and returns results by municpality.
+    Takes results by SID and returns results by municpality. 
 
     Parameters
     ----------
@@ -2301,9 +2322,21 @@ def group_by_municipality(results, include_totals = True, include_elig = False):
     results.loc[(results['region'] == 3) & (results['municipality_name']=='Бяла'),'municipality_name'] = 'Бяла (Варна)'
     results.loc[(results['region'] == 19) & (results['municipality_name']=='Бяла'),'municipality_name'] = 'Бяла (Русе)'
 
+    reg = results.groupby('municipality_name').first()[['region', 'region_name']]
+    nsids = results[['region', 'municipality_name']].groupby('municipality_name').count()
     mun_res = results.groupby('municipality_name').sum()[keep]
+    for col in reg:
+        mun_res[col] = reg[col] 
+        
+    mun_res['n_stations'] = nsids
+
+    #TODO add nuts4, nuts3
 
     if include_totals:
-        mun_res['total'] = mun_res[parties].sum(axis=1) 
+        mun_res['total'] = mun_res[parties].sum(axis=1)
 
-    return mun_res 
+    if 'total' in mun_res and 'eligible_voters' in mun_res:
+        mun_res['activity'] = mun_res['total']/mun_res['eligible_voters']
+
+    return mun_res
+
