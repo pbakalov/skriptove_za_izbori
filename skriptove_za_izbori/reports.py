@@ -2340,3 +2340,51 @@ def group_by_municipality(
 
     return mun_res
 
+def for_ns_maps(df):
+    '''
+    Essentially groups results by EKATTE.
+    Also adds n_stations per EKATTE.
+
+    Parameters
+    ----------
+    df : dataframe
+        Indexed by SID. Last 10 columns are meta (address, place, ekatte, etc.).
+
+    Returns
+    -------
+    df
+        Results grouped by EKATTE.
+    '''
+    
+    # TODO
+    # use places_df.index as index? more understandable for users 
+    
+    meta_cols = df.columns[-10:].to_list()
+    parties = [p for p in df.columns[:-10] if p !='invalid'] # including npn; no invalid 
+    
+    dfbg = df[df.index < '320000000'] # won't work for 2015 referendum & local elections 
+    by_ekatte = dfbg[parties + ['invalid', 'eligible_voters', 'ekatte']].groupby('ekatte').sum(numeric_only=True)
+
+    parties = by_ekatte[parties].sum().sort_values(ascending = False).index.to_list() # order by total votes at the national level 
+
+    nsids = df[['ekatte', 'region']].groupby('ekatte').count()
+
+    final = by_ekatte[parties + ['invalid']]
+    final['total_valid'] = by_ekatte[parties].sum(axis = 1)  # total valid votes (parties + NPN ) 
+    final['total'] = by_ekatte[parties + ['invalid']].sum(axis = 1)  # total votes (parties + NPN + invalid) 
+    final['eligible_voters'] = by_ekatte['eligible_voters'] # initial voter list 
+    final['invalid'] = by_ekatte['invalid'] 
+    final['n_stations'] = nsids
+
+    final.index.name = 'id'
+    final.rename(
+        columns = {
+            'npn' : 'не подкрепям никого', 
+            'invalid' : 'невалидни', 
+        },  
+        inplace = True
+    ) 
+    
+    return final
+    
+
