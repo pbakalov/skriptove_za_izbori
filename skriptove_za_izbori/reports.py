@@ -2210,21 +2210,6 @@ def ts_snapshot(
         )
         used_cols.append('total')
 
-    if include_invalid:
-        fig.add_trace(
-            go.Scatter(
-                x = df_ts.index,
-                y = df_ts['invalid'],
-                name = 'Невалидни',
-                mode = 'lines+markers+text',
-                line = dict(width = 5),
-                marker = dict(size = 15), 
-                text = df_ts['invalid'],
-                textposition = 'top center',
-            )
-        )
-        used_cols.append('invalid')
-
     if include_eligible:
         fig.add_trace(
             go.Scatter(
@@ -2264,6 +2249,18 @@ def ts_snapshot(
             )
         )
         
+    if include_invalid:
+        fig.add_trace(
+            go.Bar(
+                x = df_ts.index,
+                y = df_ts['invalid'],
+                name = 'Невалидни',
+                text = df_ts['invalid'],
+                marker = dict(color = 'lightgray'),
+            )
+        )
+        used_cols.append('invalid')
+
     # TODO possibly include n_stations 
     fig.update_yaxes(title_text='Гласували', range=[
         0, 
