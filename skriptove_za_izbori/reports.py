@@ -2070,7 +2070,7 @@ def ts_data(results, ekatte=None, sids = [], selectedParties=['ГЕРБ-СДС',
         ts_data[election]['n_stations'] = len(filtered)
         for col in ['address', 'place', 'municipality_name', 'region_name']:
             if len(filtered[col].value_counts()) == 1:
-                ts_data[election][col] = filtered[col][0]
+                ts_data[election][col] = filtered[col].iloc[0]
             elif len(filtered[col].value_counts()) > 1:
                 ts_data[election][col] = f'{len(filtered[col].value_counts())} различни'
             else:
